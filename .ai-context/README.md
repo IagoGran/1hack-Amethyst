@@ -47,6 +47,7 @@ You do not need to read every document for every task. Do not inspect code until
 ### Frontend
 
 - `frontend/DEV.md`: interface development guide.
+- `src/amethyst/ui/`: exploratory PySide6 A1/A2/A3 previews; A2 uses fake tasks and A3 a preview-only local conversation repository with fictional sample records; final framework remains `Pending`.
 
 ### Backend
 

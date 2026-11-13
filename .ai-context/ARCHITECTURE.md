@@ -6,7 +6,7 @@ The product requires a standalone, local, single-user desktop chat interface and
 
 ## Main Components
 
-- Interface: standalone desktop window with chat, task status, settings, approvals, and conversation viewing/resumption/deletion. Stack and location: `Pending`.
+- Interface: standalone desktop window with chat, task status, settings, approvals, and conversation viewing/resumption/deletion. Exploratory PySide6 A1/A2/A3 previews live in `src/amethyst/ui/`; A3 exercises conversation history through `ConversationRepository` and a preview-only SQLite adapter with fictional sample conversations. Production framework and location remain `Pending`.
 - Application/agent: `src/amethyst/application/`; `AgentService` implements task/event orchestration, context/skill application, tool selection, approval waits, cancellation, budgets, deadlines, and bounded retry/result handling through injected ports.
 - Domain: `src/amethyst/domain/`; contains task states and shared request/result/event values in `contracts.py`.
 - Contracts: `src/amethyst/ports/`; includes async application, model, tool/health, approval, repository, credential, and sandbox protocols. See `docs/s0_contract_baseline.md` for semantics and review status.
@@ -16,10 +16,14 @@ The product requires a standalone, local, single-user desktop chat interface and
 - Configuration: `src/amethyst/configuration/`; provider/connector connection validation and adapter factories are implemented. General application settings loading remains pending.
 - Execution: `security/sandbox.py` implements Docker Engine/runc through a local Unix socket with a pinned image, read-only non-recursive workspace mount, default network denial, resource limits, and confirmed cleanup. Implicit image volumes are rejected; image health checks and daemon output logging are disabled. The adapter remains disabled until host validation; `adapters/sandbox.py` is the S0 fail-closed placeholder. See `docs/sandbox_runtime.md` for the selected profile and pending Ubuntu/WSL2 acceptance.
 - Conversation, skill, and connection storage: durable repositories backed by an application-owned SQLite database. A version-1 schema stores JSON payloads and applies upserts, ordered listing, and idempotent deletion. The default path follows `XDG_DATA_HOME` or `~/.local/share/amethyst/amethyst.sqlite3`. Encryption, backup, cleanup scheduling, and recovery from future schema migrations remain `Pending`.
+- A3's preview-only SQLite adapter uses fictional sample conversations; production conversation persistence is provided by the durable repository described above.
 
 ## Data Flow
 
 The user submits a task; `AgentService` inspects available context, plans before consequential actions, and requests required approval for one action or an explicitly listed batch. Once authorized, it executes enabled tools within configured limits, inspects results, and reports status and available sources through async calls and typed, sequenced events. Task-budget exhaustion pauses work for an explicit increase. The deterministic application-to-sandbox handoff is tested in `tests/integration/test_agent_sandbox.py`. GUI event-loop integration, live-service validation, and target-platform acceptance remain `Pending`.
+## Data Flow
+
+The user submits a task; `AgentService` inspects available context, plans before consequential actions, and requests required approval for one action or an explicitly listed batch. Once authorized, it executes enabled tools within configured limits, inspects results, and reports status and available sources through async calls and typed, sequenced events. Task-budget exhaustion pauses work for an explicit increase. The deterministic application-to-sandbox handoff is tested in `tests/integration/test_agent_sandbox.py`. A1–A3 previews bridge async calls through worker threads; production GUI event-loop integration, live-service validation, and target-platform acceptance remain `Pending`.
 
 ## External Integrations
 
