@@ -34,7 +34,7 @@ The Python application lives in `src/1hack_amethyst/`: `application/` for use ca
 
 ## Dependency Management
 
-Declare runtime dependencies in `[project].dependencies` and development tools in the `dev` dependency group in `pyproject.toml`. Use `uv` to synchronize and run project tools. Do not add dependencies without a project need.
+Declare runtime dependencies in `[project].dependencies` and development tools in the `dev` dependency group in `pyproject.toml`. Use `uv` to synchronize and run project tools. Commit `uv.lock` so installations use the resolved dependency versions. Do not add dependencies without a project need.
 
 ## Common Errors to Avoid
 

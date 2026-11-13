@@ -8,11 +8,11 @@ Use the same integration branch as the base for three long-running workstream br
 
 | Contributor | Workstream | Branch | Primary ownership |
 |---|---|---|---|
-| Person A | Desktop experience and user-facing state | `feature/mvp-desktop` | Desktop window, chat, settings, conversations, skills, approval/status presentation, accessibility |
-| Person B | Agent, permissions, execution, and safety | `feature/mvp-agent-security` | Task orchestration, permissions, approval enforcement, code-workspace operations, sandbox, limits, retention/credential enforcement |
-| Person C | Providers, connectors, and persistence foundations | `feature/mvp-integrations` | Provider/tool contracts, model and data adapters, connection configuration and health checks, persistence adapters, adapter contract tests |
+| Iago (Person A) | Desktop experience and user-facing state | `feature/mvp-desktop` | Desktop window, chat, settings, conversations, skills, approval/status presentation, accessibility |
+| Hugo (Person B) | Agent, permissions, execution, and safety | `feature/mvp-agent-security` | Task orchestration, permissions, approval enforcement, code-workspace operations, sandbox, limits, retention/credential enforcement |
+| Antonio (Person C) | Providers, connectors, and persistence foundations | `feature/mvp-integrations` | Provider/tool contracts, model and data adapters, connection configuration and health checks, persistence adapters, adapter contract tests |
 
-Names are intentionally roles because contributor names were not supplied. The three contributors should agree on interface contracts in the first integration PR. Each workstream owns its implementation and tests; a shared-file change affecting another workstream needs an agreed contract and a small coordinated PR. Avoid simultaneous edits to shared context or requirements files; the workstream author making a consequential decision updates the relevant context with that PR.
+Iago owns Person A / Workstream A, Hugo owns Person B / Workstream B, and Antonio owns Person C / Workstream C. The three contributors should agree on interface contracts in the first integration PR. Each workstream owns its implementation and tests; a shared-file change affecting another workstream needs an agreed contract and a small coordinated PR. Avoid simultaneous edits to shared context or requirements files; the workstream author making a consequential decision updates the relevant context with that PR.
 
 ## Shared Setup and Parallel Branch Workflow
 
