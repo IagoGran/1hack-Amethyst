@@ -1,0 +1,17 @@
+[project]
+name = "1hack-amethyst"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "IagoGran", email = "iago@iago-grandal.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+1hack-amethyst = "1hack_amethyst:main"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
