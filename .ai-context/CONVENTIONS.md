@@ -20,6 +20,13 @@ The Python application lives in `src/amethyst/`: `application/` for use cases, `
 - Use `snake_case` for modules, functions, and variables; `PascalCase` for classes; and `UPPER_SNAKE_CASE` for constants.
 - Use short, descriptive kebab-case branch descriptions.
 
+### Function and Class Design
+
+- Keep functions and methods under 100 lines by default; extract cohesive helpers as needed.
+- Give every function and method an English docstring that explains its purpose and behavior.
+- Add concise comments for non-obvious logic, especially async/thread event bridges and security boundaries; explain behavior without repeating the code.
+- Use small superclasses for shared behavior or stable roles. Prefer composition when inheritance would add no clarity.
+
 ### Code Formatting
 
 - Use four spaces for Python indentation and UTF-8 text files with LF line endings.
