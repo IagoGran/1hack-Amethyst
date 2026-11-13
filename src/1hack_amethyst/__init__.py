@@ -1,2 +1,5 @@
-def main() -> None:
-    print("Hello from 1hack-amethyst!")
+"""Modular coding agent package for 1hack-amethyst."""
+
+from .main import main
+
+__all__ = ["main"]
