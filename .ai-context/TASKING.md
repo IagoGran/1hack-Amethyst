@@ -37,6 +37,7 @@ Use an English title and description. Summarize behavior, link relevant requirem
 ## Definition of Done
 
 - The change meets its objective and does not contradict `docs/project_requirements.md`.
+- Every Python function meets the 100-line maximum and has a Numpydoc docstring with purpose, parameters, return value, and relevant notes.
 - Relevant `.ai-context/` documents are up to date.
 - New code, comments, documentation, commit messages, and user-facing text are in English.
 - The result and any undecided items are reported.

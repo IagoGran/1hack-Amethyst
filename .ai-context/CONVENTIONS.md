@@ -25,6 +25,9 @@ The Python application lives in `src/amethyst/`: `application/` for use cases, `
 - Use four spaces for Python indentation and UTF-8 text files with LF line endings.
 - Format Python with Ruff using an 88-character line length.
 - Keep Markdown readable; do not enforce line wrapping automatically.
+- Keep every Python function and method at 100 lines or fewer, counting its definition, docstring, and body. Split longer functions into helpers with clear responsibilities.
+- Give every Python function and method a Numpydoc-style docstring. Explain its purpose; document every parameter and return value; add a `Notes` section for important behavior, limitations, side effects, or safety considerations. Use `Parameters` and `Returns` sections for internal helpers too; use `None` for functions without a return value.
+- Apply the same limits and docstring requirements to test functions and helpers.
 
 ### Linting and Formatting
 
