@@ -11,6 +11,18 @@ dependencies = [
     "keyring>=25.7.0",
 ]
 
+[project.optional-dependencies]
+postgresql = ["psycopg[binary]>=3.2,<4"]
+qdrant = ["qdrant-client>=1.12,<2"]
+chroma = ["chromadb>=0.5,<2"]
+milvus = ["pymilvus>=2.5,<3"]
+integrations = [
+    "psycopg[binary]>=3.2,<4",
+    "qdrant-client>=1.12,<2",
+    "chromadb>=0.5,<2",
+    "pymilvus>=2.5,<3",
+]
+
 [dependency-groups]
 dev = [
     "mypy",

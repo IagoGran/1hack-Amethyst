@@ -141,7 +141,7 @@ class TextDelta:
 class ModelCompleted:
     """Exactly one final item per successful stream; usage is not incremental."""
 
-    usage: Usage
+    usage: Usage | None
     tool_calls: tuple[ToolCall, ...] = ()
     finish_reason: Literal["stop", "tool_calls", "length"] = "stop"
 

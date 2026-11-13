@@ -57,7 +57,7 @@ These approved choices constrain the scope above; unrelated recommendations have
 
 ## Project Status
 
-Requirements and the S0 contract baseline are available. The importable `amethyst` package provides async ports, shared data types, deterministic development fakes, and fail-closed approval/sandbox placeholders; see `docs/s0_contract_baseline.md`. These are not production integrations. Section 5 acceptance decisions are approved, including operational limits, retention, approvals, and the MVP testing gate. A three-person parallel implementation plan with requirement coverage is in `docs/implementation_plan.md`. S0 validation is tracked in the baseline document. Contributor acknowledgment and hosted PR review remain `Pending`. MVP functional implementation and acceptance results: `Pending`. Documentation of a decision is not evidence of implemented behavior.
+Requirements and the S0 contract baseline are available. Person C's implementation adds provider and connector adapters, secret-free connection validation/factories, connection CRUD/health orchestration, and SQLite-backed conversation/skill/connection repositories. Deterministic adapter contract tests have been added. Ruff lint, source mypy, and the offline test suite pass (23 tests); live-service checks have not been run. Adapter acceptance across approved services, embedding-model selection for vector queries, encryption/backup design, contributor acknowledgment, hosted PR review, and overall MVP acceptance remain `Pending`. See `docs/implementation_plan.md` for workstream status. Documentation of a decision is not evidence of implemented behavior.
 
 ## Related Repositories and Services
 

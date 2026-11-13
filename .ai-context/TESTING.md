@@ -25,6 +25,8 @@ Add or update tests for behavior changes and important permission, tool executio
 
 `tests/unit/test_contract_baseline.py` checks fake model/tool results, task event ordering/replay, cancellation, repository snapshot isolation, memory credentials, deny-all approvals, and disabled sandbox behavior. `tests/integration/test_launch.py` checks the provisional module launcher. Run the suite without live services or credentials. S0 requires Ruff lint/format checks, mypy, pytest, a package build, and a fresh-wheel import/CLI smoke check before merging into `dev`. These checks do not establish desktop acceptance, durable retention, or the MVP coverage gate.
 
+`tests/unit/test_integrations.py` adds credential-free contract coverage for SQLite repository restart behavior, SQLite read-only enforcement and output bounds, provider stream translation, Brave source attribution, vector adapter limits/source IDs, connection validation, and connection CRUD. PostgreSQL uses an opt-in driver; live adapter checks remain separately configured. The full offline suite passed with 23 tests on 2026-11-13; this does not establish live-service acceptance.
+
 ## Approved MVP Acceptance Gate
 
 Requirements section 5.8 defines the release gate; implementation and results remain `Pending`.

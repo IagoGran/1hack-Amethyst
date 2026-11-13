@@ -2,7 +2,7 @@
 
 ## Scope and review status
 
-This baseline implements the shared Python interfaces and development doubles for S0 in `implementation_plan.md`. It does not implement the MVP agent, GUI, live adapters, durable persistence, approval engine, or sandbox. Requirement scope remains defined by `project_requirements.md`.
+This baseline records the shared Python interfaces and development doubles for S0 in `implementation_plan.md`. It does not implement the MVP agent, GUI, approval engine, or sandbox. Person C has since added provider/tool adapters and durable SQLite repositories; those additions are implementation work, not evidence of MVP acceptance. Requirement scope remains defined by `project_requirements.md`.
 
 The project owner instructed implementation on `feature/contracts` and a merge into `dev` after tests pass on 2026-11-13. `dev` is the integration branch. The three planned workstream branches are `feature/mvp-desktop`, `feature/mvp-agent-security`, and `feature/mvp-integrations`. Existing branches such as `feature/frontend` and `feature/agent-security` are preserved; they are not silently renamed or deleted.
 
@@ -39,7 +39,7 @@ Shared values live in `domain/contracts.py`; task snapshots and status values li
 
 ### Providers and tools
 
-- Model streaming emits zero or more `TextDelta` items and exactly one `ModelCompleted` on success. A non-streaming adapter emits its complete text as one delta. Completion carries whole-attempt usage, complete tool calls with stable IDs, and a finish reason; usage must not be counted once per delta. Tool calls are represented in subsequent assistant messages, and tool response messages carry the matching call ID.
+- Model streaming emits zero or more `TextDelta` items and exactly one `ModelCompleted` on success. A non-streaming adapter emits its complete text as one delta. Completion carries whole-attempt usage when known (`None` when unavailable), complete tool calls with stable IDs, and a finish reason; usage must not be counted once per delta. Tool calls are represented in subsequent assistant messages, and tool response messages carry the matching call ID.
 - Capabilities are queried per model ID. Input plus reserved output must fit the model capacity. Request fields carry input/output and idle/total timeout limits; S0 does not enforce the complete B5 budget policy.
 - Tool definitions contain a name, JSON argument schema, and read-only classification. Calls/results share a call ID. Results preserve available source identifiers/URLs and explicit truncation. The classification is metadata, not permission: B must check authorization before dispatch, and C must enforce read-only SQL at the connection boundary.
 - `OperationContext` identifies task/session, remaining call timeout, and output byte limit. Model adapters use the lower of request and remaining context deadlines. Provider-specific connection testing implements `ConnectionTester`. Operation context IDs never grant access.
@@ -57,7 +57,7 @@ Shared values live in `domain/contracts.py`; task snapshots and status values li
 
 - Repositories expose `save`, `load`, `list`, and `delete`: save upserts, missing load raises `NOT_FOUND`, list sorts by ID, and deletion is idempotent. Returned values are detached snapshots, including nested connection options and message tool-call arguments.
 - Conversation records contain ordered messages; reopening a conversation loads its record and submits a new task using that ID. Skill records carry enabled state and optional condition text; condition grammar/evaluation remains B/C work. Connection records contain enabled state, non-secret options, and an opaque credential reference.
-- In-memory repositories intentionally lose records on restart. They do not satisfy conversation/settings/skill retention. The durable engine, schema versioning, migrations, concurrent update strategy, encryption/backup design, and cleanup schedule remain **Pending** for C6/B6.
+- In-memory repositories intentionally lose records on restart. SQLite repositories now provide local durable storage for conversations, skills, and connections with schema version 1 and atomic per-record upserts. SQLite is selected as the internal single-user database; it is distinct from the external read-only SQLite connector. Migrations beyond v1, concurrent update policy beyond SQLite transactions, encryption/backup design, and cleanup schedule remain **Pending** for C6/B6.
 - Connection kinds/options are an extensible carrier, not validated provider configuration. C5 must define allowed kinds, validate endpoint/model/connection fields, and reject secrets in ordinary options and URLs. Adapter factories resolve credential references through `CredentialStore`; secrets never belong in `Connection` exports or diagnostic output.
 - The memory credential double performs no disk I/O and can be cleared at shutdown. OS credential-store selection and fallback integration remain B6. No credential store is automatically wired into the CLI.
 
@@ -90,8 +90,10 @@ These are bounded follow-up proposals, not approved architecture:
 |---|---|---|---|
 | GUI, packaging, WSL2 launch | Evaluate a Python-native standalone desktop shell and async bridge on both target platforms before selecting a framework | Iago / A1 | Pending |
 | Container runtime and edit isolation | Compare available runtime support on Ubuntu/WSL2; demonstrate workspace/network isolation and staged diff review before selecting a profile | Hugo / B4 | Pending |
-| Durable storage and maintenance | Evaluate a local embedded database behind these repositories, including migrations, atomic saves, deletion, and cleanup; external SQLite support does not select it | Antonio with Hugo / C6, B6 | Pending |
-| Provider SDKs and model IDs | Select per adapter after validating streaming, usage, cancellation, and capability reporting against the ports | Antonio / C2–C5 | Pending |
+| Durable storage and maintenance | SQLite via the Python standard library is selected for the local database; validate migrations, restart recovery, file permissions, and deletion; encryption/backup and cleanup remain open | Antonio with Hugo / C6, B6 | Selected engine; remaining details Pending |
+| Provider and connector clients | Model APIs use the Python standard library; psycopg 3, qdrant-client, chromadb, and pymilvus are optional extras. Validate supported versions against adapters | Antonio / C2–C5 | Implemented; acceptance Pending |
+| Model IDs and context windows | Select supported IDs and verify actual per-model context limits against adapter capability values | Antonio / C2 | Pending |
+| Vector query embeddings | Decide which approved model creates embeddings from user query text before vector retrieval | Antonio / C4, B1 | Pending |
 | Benchmarks | Define reference machines/models and 30-run fixtures under requirements section 5.5 | A/B/C / A7, B7, C7 | Pending |
 
 ## Validation and integration procedure

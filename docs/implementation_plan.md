@@ -156,6 +156,20 @@ Branch: `feature/mvp-agent-security`
 
 Branch: `feature/mvp-integrations`
 
+### Person C implementation progress (2026-11-13)
+
+Implementation is in progress on the existing `feature/integrations` branch, which is preserved per repository guidance. The following code and deterministic tests have been added; C task checkboxes remain open pending review and applicable live adapter contracts:
+
+- OpenAI, Gemini, DeepSeek, and Ollama HTTP streaming adapters, with tool-call and usage translation.
+- SQLite and PostgreSQL read-only tools; Brave Search; Qdrant, Milvus, and Chroma retrieval adapters.
+- Validated secret-free connection records, opaque credential lookup, adapter construction, CRUD, enable/disable, and health-check orchestration.
+- SQLite-backed conversation, skill, and connection repositories with a version-1 schema, per-user default path, and restart persistence.
+- `tests/unit/test_integrations.py` contains offline contract coverage. Ruff format, Ruff lint, source mypy, and the full offline pytest suite passed (23 tests). Live-service checks have not been run.
+
+Still pending: execution of the credential-free contract tests (including mocked PostgreSQL), acceptance against real services, exact model IDs/context windows, query-text embedding selection for vector search, storage encryption/backup and cleanup, and coordination/approval of shared contract changes. The stdlib model transport uses a worker thread to read SSE/NDJSON; cancellation closes its response, but this behavior still needs adapter testing.
+
+The shared `ModelCompleted.usage` type now allows `None` when a provider does not return usage, matching the S0 contract's documented unknown-usage semantics. This interface change still needs cross-workstream review; contributor agreement is not assumed.
+
 ### C1. Shared integration contracts — FR-09, FR-19 through FR-25, NFR-11
 
 - [ ] Agree and publish model-provider, tool/connector, connection-test, source-attribution, and error contracts before adapter implementation.
@@ -245,7 +259,8 @@ These affect implementation but were not fixed by the requirements answers. Deci
 
 - Desktop GUI framework, application packaging and WSL2 GUI launch approach (A).
 - Container runtime and enforceable sandbox profile on Ubuntu and WSL2 (B).
-- Internal database, migrations, local data encryption/backup design, and cleanup scheduling (C with B for retention).
-- Exact supported model IDs, API SDKs, and connector versions (C).
+- Internal database selected as SQLite through Python's standard library; migrations beyond schema version 1, local data encryption/backup design, and cleanup scheduling remain open (C with B for retention).
+- Exact supported model IDs and per-model context windows remain open. Optional connector client ranges are declared in `pyproject.toml` and require adapter compatibility validation (C).
+- Embedding model selection to turn natural-language retrieval requests into query vectors remains open (C with B orchestration).
 - Reference machines, representative models, benchmark fixtures, and how p95 is measured (A/B/C together).
 - Contributor names and integration branch name are resolved: Iago (A), Hugo (B), Antonio (C), and `dev`. Separate contributor acknowledgment of the S0 contract proposals remains Pending.

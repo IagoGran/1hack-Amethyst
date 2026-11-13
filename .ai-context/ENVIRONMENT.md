@@ -20,7 +20,7 @@ The repository contains `.env` and `.env.example`. Names, example values, and pu
 - External read-only SQL: SQLite 3 and PostgreSQL 16+.
 - Locally hosted vector stores: Qdrant, Milvus, and ChromaDB.
 - Web search: Brave Search API.
-- Environment-specific endpoints, model IDs, SDK versions, and variable mappings: `Pending`. These selections do not choose an internal application database.
+- Model connections use stdlib HTTP and do not add a runtime dependency. Install optional drivers with `uv sync --extra integrations` (or one of `--extra postgresql`, `--extra qdrant`, `--extra chroma`, `--extra milvus`). Exact model IDs and context windows remain `Pending`; endpoints and credentials are supplied through validated connection settings and opaque credential references. These selections do not choose the internal application database.
 
 ## Approved Operational Defaults
 
@@ -49,7 +49,7 @@ Limits are configurable. Budget exhaustion pauses work until explicitly increase
 - Expire redacted diagnostic logs after seven days. Provide an explicit option to save selected logs permanently until deleted, preserving redaction.
 - Store credentials in the OS credential store. If unavailable, keep them only in memory and request them again after restart. Never fall back to plaintext disk storage.
 - Normal logs contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Keep secrets out of ordinary chat, logs, errors, and configuration exports.
-- Durable storage implementation and cleanup scheduling: `Pending`. S0 memory repositories and credentials are explicit development doubles and do not survive restart. See requirements section 5.7 for acceptance checks.
+- The internal database uses SQLite at `$XDG_DATA_HOME/amethyst/amethyst.sqlite3`, falling back to `~/.local/share/amethyst/amethyst.sqlite3`. Repository values persist across process restarts. Encryption, backup, migration beyond schema version 1, and cleanup scheduling remain `Pending`. S0 memory repositories and credentials remain explicit development doubles and do not survive restart. See requirements section 5.7 for acceptance checks.
 
 ## Security Considerations
 

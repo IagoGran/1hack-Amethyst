@@ -22,15 +22,15 @@ See `.ai-context/ENVIRONMENT.md`. Do not include secret values.
 
 ## Endpoints and Interfaces
 
-S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for stream/error/cancellation semantics, approvals, repositories, credential references, and sandbox invocation. `adapters/fakes.py` provides deterministic development doubles; approval and sandbox placeholders fail closed. GUI transport and live adapter implementation remain `Pending`.
+S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for stream/error/cancellation semantics, approvals, repositories, credential references, and sandbox invocation. `adapters/fakes.py` provides deterministic development doubles; approval and sandbox placeholders fail closed. GUI transport and live-service acceptance remain `Pending`.
 
-Approved MVP integrations are OpenAI API, Gemini API, DeepSeek API, local Ollama models, read-only SQLite 3 and PostgreSQL 16+, locally hosted Qdrant/Milvus/ChromaDB, and Brave Search API. Each requires adapter contract tests. SDK versions and concrete model IDs remain configuration/design choices.
+Provider adapters use the standard-library HTTP client and stream SSE/NDJSON. PostgreSQL and vector-store clients are optional dependencies declared in the `postgresql`, `qdrant`, `chroma`, `milvus`, and combined `integrations` extras. Install them with `uv sync --extra integrations` when using all adapters. Model IDs, exact per-model context windows, SDK versions, and live-service results remain `Pending`.
 
 Commands and tests must execute in a container sandbox restricted to the approved workspace, with network access disabled by default. Host-local execution is outside the approved initial scope. The `Sandbox` protocol and disabled placeholder exist. Container runtime and production enforcement: `Pending`.
 
 ## Data and Persistence
 
-Conversation, skill, and connection repository contracts plus detached in-memory doubles are available. The internal durable storage engine and persistence implementation remain `Pending`. User SQL in the requirements refers to an external read-only tool and does not choose the application database.
+Conversation, skill, and connection repository contracts have detached in-memory doubles and SQLite durable implementations in `adapters/persistence.py`. The application database path defaults to `$XDG_DATA_HOME/amethyst/amethyst.sqlite3`, or `~/.local/share/amethyst/amethyst.sqlite3`. Stored records use JSON payloads in schema version 1, and the database file receives best-effort POSIX mode `0600`. Encryption, backup, migration beyond version 1, and cleanup scheduling remain `Pending`. User SQL in the requirements refers to an external read-only tool and does not select this internal SQLite database.
 
 Conversations persist locally until deleted, with MVP viewing/resumption/deletion. Settings and skills remain until deleted. Raw retrieval/workspace copies are discarded after each task unless explicitly saved; conversation content follows conversation retention. Redacted diagnostic logs expire after seven days unless explicitly saved permanently. Credentials use the OS credential store with a memory-only fallback. See requirements section 5.7 and `.ai-context/ENVIRONMENT.md` for complete rules.
 
