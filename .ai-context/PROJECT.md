@@ -57,7 +57,7 @@ These approved choices constrain the scope above; unrelated recommendations have
 
 ## Project Status
 
-Requirements and an initial modular skeleton are available. Section 5 acceptance decisions are approved, including operational limits, retention, approvals, and the MVP testing gate. Functional implementation and acceptance results: `Pending`. Documentation of a decision is not evidence of implemented behavior.
+Requirements and an initial modular skeleton are available. Section 5 acceptance decisions are approved, including operational limits, retention, approvals, and the MVP testing gate. A three-person parallel implementation plan with requirement coverage is in `docs/implementation_plan.md`. Functional implementation and acceptance results: `Pending`. Documentation of a decision is not evidence of implemented behavior.
 
 ## Related Repositories and Services
 

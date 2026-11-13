@@ -24,6 +24,8 @@ Keep documentation consistent with requirements and actual project status. Do no
 
 Use `<type>/<short-kebab-case-description>`, for example `feature/tool-approval`, `fix/task-cancellation`, `docs/context-guide`, or `refactor/provider-ports`.
 
+For the three-person MVP implementation, use the ownership, branch names, task breakdown, shared-contract workflow, and dependencies in `docs/implementation_plan.md`. Replace placeholder contributor roles and the proposed `main` base if the team uses different names or an integration branch. Keep workstream PRs independently mergeable; coordinate shared contracts before cross-branch implementation.
+
 ### Commits
 
 Use Conventional Commits: `<type>(<optional-scope>): <imperative summary>`, written in English. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, and `chore`.
@@ -39,6 +41,7 @@ Use an English title and description. Summarize behavior, link relevant requirem
 - New code, comments, documentation, commit messages, and user-facing text are in English.
 - The result and any undecided items are reported.
 - Run checks when requested or explicitly included in the agreed workflow.
+- For MVP feature work, follow `docs/implementation_plan.md` and keep requirement coverage and ownership current as tasks are completed or reassigned.
 
 ## General Task Checklist
 
