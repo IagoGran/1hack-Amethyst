@@ -10,7 +10,7 @@
 
 ## Repository Structure
 
-The Python application lives in `src/1hack_amethyst/`: `application/` for use cases, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, and `configuration/` for configuration. The GUI and its technology remain `Pending`. `src/llm/agent.py` is pre-existing code; migration or removal is `Pending`.
+The Python application lives in `src/1hack_amethyst/`: `application/` for use cases, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, and `configuration/` for configuration. A standalone desktop GUI is approved; its framework, implementation, and location remain `Pending`. `src/llm/agent.py` is pre-existing code; migration or removal is `Pending`.
 
 ## Style and Standards
 
@@ -54,6 +54,8 @@ Write new and maintained project documentation in English. Document stable inter
 
 ## Decisions That Must Not Be Broken
 
-- Existing file modifications require explicit approval (FR-27).
+- Existing file modifications require explicit approval of the displayed diff, individually or in an explicitly listed batch; changed proposals require renewed approval (FR-27).
 - Tool execution must be blocked when required approval is missing or revoked (FR-30).
 - Providers, connectors, and skills must retain modular boundaries (NFR-11).
+- Product commands/tests run in a container sandbox restricted to the approved workspace, with network disabled by default (FR-16, FR-17, NFR-06).
+- Apply the approved limits, approval lifetimes, and retention rules in requirements section 5; do not treat documentation of these decisions as completed implementation.

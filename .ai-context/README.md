@@ -35,14 +35,14 @@ You do not need to read every document for every task. Do not inspect code until
 
 ### Core
 
-- `PROJECT.md`: known purpose, scope, and status.
+- `PROJECT.md`: known purpose, approved acceptance scope, remaining recommendations, and implementation status.
 - `TASKING.md`: workflow and definition of done.
 - `CONVENTIONS.md`: repository-wide rules and structure.
 
 ### Common Documents
 
-- `ARCHITECTURE.md`: planned modules and boundaries; technical details remain pending.
-- `ENVIRONMENT.md`: configuration and environment variables.
+- `ARCHITECTURE.md`: planned modules, local desktop deployment, selected integrations, and pending implementation choices.
+- `ENVIRONMENT.md`: supported platforms, operational defaults, retention, credential handling, and environment variables.
 
 ### Frontend
 
@@ -54,13 +54,13 @@ You do not need to read every document for every task. Do not inspect code until
 
 ### Specialized Documents
 
-- `TESTING.md`: test and validation conventions.
+- `TESTING.md`: test conventions and approved MVP acceptance and coverage gates.
 
 ## Maintenance Rules
 
 - Update context in the same change that alters scope, modules, interfaces, configuration, or conventions.
 - Treat `docs/project_requirements.md` as the normative requirements reference.
-- Do not present proposed MVP boundaries as approved decisions; the requirements document identifies them as recommendations.
+- Section 5 of `docs/project_requirements.md` records approved acceptance decisions. Keep other proposed MVP boundaries and Added requirements distinct from those approvals.
 - Use `Pending` for undecided items and `N/A` only when something does not apply.
 - Write new project code and documentation in English.
 

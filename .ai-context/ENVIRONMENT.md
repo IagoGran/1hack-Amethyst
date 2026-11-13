@@ -2,11 +2,13 @@
 
 ## Supported Environments
 
-`Pending`.
+- Approved MVP platforms: Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
+- Deployment: local, single-user, standalone desktop window. Desktop framework and packaging: `Pending`.
+- Commands and project tests: container sandbox restricted to the approved workspace, with network access disabled by default. Container runtime: `Pending`.
 
 ## Environment Differences
 
-`Pending`.
+Desktop smoke tests must cover both supported platform configurations, including GUI operation through WSL2. Credential-store availability must be handled explicitly: use memory-only credentials when the store is unavailable, including in WSL setups. Other development/release environment differences: `Pending`.
 
 ## Environment Variables
 
@@ -14,7 +16,40 @@ The repository contains `.env` and `.env.example`. Names, example values, and pu
 
 ## External Services by Environment
 
-Models and connectors are described in `docs/project_requirements.md`; environment-specific settings and providers: `Pending`.
+- Model providers: OpenAI API, Gemini API, DeepSeek API, and local Ollama models.
+- External read-only SQL: SQLite 3 and PostgreSQL 16+.
+- Locally hosted vector stores: Qdrant, Milvus, and ChromaDB.
+- Web search: Brave Search API.
+- Environment-specific endpoints, model IDs, SDK versions, and variable mappings: `Pending`. These selections do not choose an internal application database.
+
+## Approved Operational Defaults
+
+Requirements sections 5.5 and 5.6 are normative; implementation/configuration wiring remains `Pending`.
+
+| Setting | Default |
+|---|---|
+| SQL/search/vector call timeout | 30 seconds |
+| Model request timeout | 60 seconds idle; 300 seconds total |
+| Sandbox command timeout | 120 seconds |
+| Task timeout | 10 minutes, excluding approval waits |
+| Task token budget | 100,000 cumulative input/output tokens, including retries |
+| Per-request model limits | 32,000 input tokens; 8,000 output tokens, also constrained by model capacity |
+| Retrieval limit | 8 chunks, at most 1,000 tokens each |
+| SQL result limit | 1,000 rows |
+| Tool-output limit | 1 MiB per call |
+| Automatic retries | At most 2 after the initial attempt, only for transient failures |
+
+Limits are configurable. Budget exhaustion pauses work until explicitly increased. Retries use exponential backoff with jitter and respect provider delays within the remaining deadline/budget. Do not automatically repeat file mutations or commands with uncertain outcomes; permission, authentication, and invalid-input failures require correction.
+
+## Data Retention and Credentials
+
+- Persist conversations locally until deleted, with MVP viewing, resumption, and deletion.
+- Keep settings and saved skills until deleted.
+- Discard raw retrieved content and copied workspace data after the task unless explicitly saved. Content incorporated into a retained conversation follows conversation retention; project files and source databases are unaffected.
+- Expire redacted diagnostic logs after seven days. Provide an explicit option to save selected logs permanently until deleted, preserving redaction.
+- Store credentials in the OS credential store. If unavailable, keep them only in memory and request them again after restart. Never fall back to plaintext disk storage.
+- Normal logs contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Keep secrets out of ordinary chat, logs, errors, and configuration exports.
+- Storage implementation and cleanup scheduling: `Pending`. See requirements section 5.7 for acceptance checks.
 
 ## Security Considerations
 

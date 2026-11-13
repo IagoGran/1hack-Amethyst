@@ -2,7 +2,9 @@
 
 ## Frontend Stack
 
-`Pending`. Product requirement: chat interface and unified settings.
+Framework: `Pending`. Approved product interface: a local, single-user desktop application with its own standalone window, not a browser interface. Support Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
+
+MVP workflows include chat, unified settings, task status, reviewed-diff approvals, sandboxed command/test results, and viewing/resuming/deleting conversations. Conversations persist locally until deleted. Diagnostic-log controls must allow explicit permanent saving of selected redacted logs; ordinary logs expire after seven days.
 
 ## Directory Structure
 
@@ -28,7 +30,7 @@ Contract and transport: `Pending`.
 
 ### Authentication
 
-`Pending`.
+Remote/multi-user authentication is outside the approved initial deployment scope. Any local authentication design: `Pending`.
 
 ### Assets
 
@@ -42,9 +44,12 @@ Tools and workflow: `Pending`.
 
 See `.ai-context/CONVENTIONS.md`; interface-specific rules: `Pending`.
 
+Approval controls must identify the exact action or listed batch/diffs, require renewed approval after changes, and expose permission revocation. Display token-budget pauses and allow an explicit budget increase. Distinguish truncated results and timeout outcomes from successful completion. Approved p95 targets are 200 ms for UI status feedback, 10 seconds for first visible model token, and 120 seconds for a typical task under the benchmark conditions in requirements section 5.5.
+
 ## Frontend Change Checklist
 
-- [ ] Clearly represent execution, cancellation, error, and approval states.
-- [ ] Support keyboard navigation and accessible labels (FR-16).
+- [ ] Clearly represent execution, budget pause, cancellation, error, and approval states.
+- [ ] Support keyboard navigation and accessible labels (NFR-16).
 - [ ] Do not display an action as complete when it is not.
+- [ ] Cover primary desktop workflows in smoke tests on Ubuntu and Windows/WSL2.
 - [ ] Update context when the interface contract changes.
