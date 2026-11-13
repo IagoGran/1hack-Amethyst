@@ -7,19 +7,19 @@ The product requires a standalone, local, single-user desktop chat interface and
 ## Main Components
 
 - Interface: standalone desktop window with chat, task status, settings, approvals, and conversation viewing/resumption/deletion. Stack and location: `Pending`.
-- Application/agent: `src/amethyst/application/`; evaluation, planning, and orchestration remain to be implemented.
+- Application/agent: `src/amethyst/application/`; `AgentService` implements task/event orchestration, context/skill application, tool selection, approval waits, cancellation, budgets, deadlines, and bounded retry/result handling through injected ports.
 - Domain: `src/amethyst/domain/`; contains task states and shared request/result/event values in `contracts.py`.
 - Contracts: `src/amethyst/ports/`; includes async application, model, tool/health, approval, repository, credential, and sandbox protocols. See `docs/s0_contract_baseline.md` for semantics and review status.
 - Adapters: `src/amethyst/adapters/`; stdlib HTTP streaming adapters for OpenAI, Gemini, DeepSeek, and Ollama; SQLite read-only SQL; Brave Search; and Qdrant, Milvus, and Chroma vector adapters. PostgreSQL uses optional psycopg 3. External vector adapters use optional vendor clients. Contract tests are in `tests/unit/test_integrations.py`. Runtime/live-service acceptance remains pending.
-- Permissions and approvals: `src/amethyst/security/`; deny-all placeholder available; production policy implementation pending.
+- Permissions and approvals: `src/amethyst/security/`; session grants, exact-action/batch approvals, reviewed workspace diffs, credential fallback/redaction, and retention services are implemented. The deny-all S0 placeholder remains available.
 - Skills: `src/amethyst/skills/`; skill persistence is provided by the SQLite repository; skill management/application remains pending.
 - Configuration: `src/amethyst/configuration/`; provider/connector connection validation and adapter factories are implemented. General application settings loading remains pending.
-- Execution: approved MVP container sandbox restricted to the workspace, with network disabled by default. `ports/sandbox.py` defines invocation; `adapters/sandbox.py` always refuses execution. Runtime and production implementation: `Pending`.
+- Execution: `security/sandbox.py` implements Docker Engine/runc through a local Unix socket with a pinned image, read-only non-recursive workspace mount, default network denial, resource limits, and confirmed cleanup. Implicit image volumes are rejected; image health checks and daemon output logging are disabled. The adapter remains disabled until host validation; `adapters/sandbox.py` is the S0 fail-closed placeholder. See `docs/sandbox_runtime.md` for the selected profile and pending Ubuntu/WSL2 acceptance.
 - Conversation, skill, and connection storage: durable repositories backed by an application-owned SQLite database. A version-1 schema stores JSON payloads and applies upserts, ordered listing, and idempotent deletion. The default path follows `XDG_DATA_HOME` or `~/.local/share/amethyst/amethyst.sqlite3`. Encryption, backup, cleanup scheduling, and recovery from future schema migrations remain `Pending`.
 
 ## Data Flow
 
-The user submits a task; the agent inspects relevant context, plans when needed, and requests required approvals for one action or an explicitly listed batch. Once authorized, it executes enabled tools within the configured limits, inspects results, and reports status and available sources. Task-budget exhaustion pauses work for an explicit increase. The S0 logical boundary uses async calls and typed, sequenced task events. GUI transport and application wiring to the durable repositories remain `Pending`.
+The user submits a task; `AgentService` inspects available context, plans before consequential actions, and requests required approval for one action or an explicitly listed batch. Once authorized, it executes enabled tools within configured limits, inspects results, and reports status and available sources through async calls and typed, sequenced events. Task-budget exhaustion pauses work for an explicit increase. The deterministic application-to-sandbox handoff is tested in `tests/integration/test_agent_sandbox.py`. GUI event-loop integration, live-service validation, and target-platform acceptance remain `Pending`.
 
 ## External Integrations
 
@@ -37,8 +37,9 @@ The user submits a task; the agent inspects relevant context, plans when needed,
 - Bind edit approval to the reviewed diff and invalidate it when the proposal or relevant file state changes. Action/batch approval expires after execution or task completion; session read grants expire on app exit.
 - Persist conversations until deleted. Expire redacted diagnostic logs after seven days unless explicitly saved permanently. See `ENVIRONMENT.md` and requirements section 5.7 for data handling.
 - Use the OS credential store with a memory-only fallback; no plaintext disk fallback.
-- Desktop framework, container runtime, GUI transport, and embedding-model selection for converting retrieval queries to vectors: `Pending`.
+- Desktop framework, GUI transport, and embedding-model selection for converting retrieval queries to vectors: `Pending`.
 - Internal persistence engine: SQLite from Python's standard library, selected for the single-user local application. The database file receives best-effort POSIX mode `0600`; this is not encryption and may not set Windows ACLs.
+- Container runtime/profile: Docker Engine/runc on a local Linux daemon; Ubuntu/WSL2 platform acceptance remains `Pending`. See `docs/sandbox_runtime.md`.
 
 ## Boundaries and Responsibilities
 

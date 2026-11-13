@@ -4,7 +4,7 @@
 
 - Approved MVP platforms: Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
 - Deployment: local, single-user, standalone desktop window. Desktop framework and packaging: `Pending`.
-- Commands and project tests: container sandbox restricted to the approved workspace, with network access disabled by default. Container runtime: `Pending`.
+- Product commands and project tests: Docker Engine/runc on a local Linux daemon, restricted to a read-only approved workspace, with network disabled by default. The selected profile requires cgroup v2, resource controllers, and built-in seccomp; it remains disabled until host validation. See `docs/sandbox_runtime.md`.
 
 ## Environment Differences
 
@@ -13,6 +13,8 @@ Desktop smoke tests must cover both supported platform configurations, including
 ## Environment Variables
 
 The repository contains `.env` and `.env.example`. Names, example values, and purposes: `Pending` until relevant references are reviewed. Never copy secret values into context.
+
+The live sandbox acceptance suite recognizes `AMETHYST_LIVE_SANDBOX=1`, `AMETHYST_SANDBOX_IMAGE` (a pre-provisioned repository digest), `AMETHYST_DOCKER_SOCKET` (default `/var/run/docker.sock`), and optional `AMETHYST_WINDOWS_BUILD` for the WSL2 report. These are test configuration, not production application settings. Opted-in misconfiguration fails rather than skips; the default test run never contacts Docker. See `docs/sandbox_runtime.md` for commands and the acceptance record.
 
 ## External Services by Environment
 
@@ -24,7 +26,7 @@ The repository contains `.env` and `.env.example`. Names, example values, and pu
 
 ## Approved Operational Defaults
 
-Requirements sections 5.5 and 5.6 are normative; implementation/configuration wiring remains `Pending`.
+Requirements sections 5.5 and 5.6 are normative. Workstream B implements these controls through `configuration.limits.Limits` and the application/security services. Desktop settings and live adapter wiring remain Pending.
 
 | Setting | Default |
 |---|---|

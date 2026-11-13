@@ -94,63 +94,65 @@ Branch: `feature/mvp-agent-security`
 
 ### B1. Task lifecycle and orchestration — FR-05 through FR-11, NFR-08 through NFR-10
 
-- [ ] Model task states, progress events, cancellation, and budget-paused state.
-- [ ] Inspect relevant task context and detect already-started or partially completed work.
-- [ ] Plan multi-step work before consequential actions; select enabled tools through contracts.
-- [ ] Inspect tool results, validate outcomes, and decide whether more work is needed.
-- [ ] Recover from transient tool failures within retry limits; report permanent failures and stop safely.
-- [ ] Keep displayed task, permission, and result state consistent with execution outcomes.
-- [ ] Keep the application usable and communicate limitations during provider/connector outages.
+- [x] Model task states, progress events, cancellation, and budget-paused state.
+- [x] Inspect relevant task context and detect already-started or partially completed work.
+- [x] Plan multi-step work before consequential actions; select enabled tools through contracts.
+- [x] Inspect tool results, validate outcomes, and decide whether more work is needed.
+- [x] Recover from transient tool failures within retry limits; report permanent failures and stop safely.
+- [x] Keep displayed task, permission, and result state consistent with execution outcomes.
+- [x] Keep the application usable and communicate limitations during provider/connector outages.
 
 ### B2. Workspace code operations — FR-13 through FR-15, FR-18, FR-26, FR-27
 
-- [ ] Implement scoped workspace inspection after permission is granted.
-- [ ] Generate a meaningful diff for file changes, including new-file previews as appropriate.
-- [ ] Bind approval to the reviewed diff and relevant file state; invalidate approval when either changes.
-- [ ] Apply approved changes only; record outcome and report failure without claiming success.
-- [ ] Analyze supplied failures and connect proposed/implemented fixes to the same permission and diff-review path.
+- [x] Implement scoped workspace inspection after permission is granted.
+- [x] Generate a meaningful diff for file changes, including new-file previews as appropriate.
+- [x] Bind approval to the reviewed diff and relevant file state; invalidate approval when either changes.
+- [x] Apply approved changes only; record outcome and report failure without claiming success.
+- [x] Analyze supplied failures and connect proposed/implemented fixes to the same permission and diff-review path through the normal task prompt and permission-checked workspace tools.
 
 ### B3. Permission and approval engine — FR-26 through FR-30, NFR-05, NFR-15
 
-- [ ] Define permission scopes for tools and local resources with grant, inspect, and revoke operations.
-- [ ] Scope protected approval to one action or explicitly enumerated action/diff batch.
-- [ ] Expire action approvals after use or task completion; expire read-only session grants on app exit.
-- [ ] Enforce high-impact approval for destructive actions and database writes.
-- [ ] Block protected execution when permission is absent, expired, or revoked, including unexecuted batch actions.
-- [ ] Add tests for approval denial, expiry, revocation, batch scope, and changed-diff invalidation.
+- [x] Define permission scopes for tools and local resources with grant, inspect, and revoke operations.
+- [x] Scope protected approval to one action or explicitly enumerated action/diff batch.
+- [x] Expire action approvals after use or task completion; expire read-only session grants on app exit.
+- [x] Enforce high-impact approval for destructive actions. Database writes are rejected because enabled SQL tools are read-only.
+- [x] Block protected execution when permission is absent, expired, or revoked, including unexecuted batch actions.
+- [x] Add tests for approval denial, expiry, revocation, batch scope, and changed-diff invalidation.
 
 ### B4. Sandboxed commands and tests — FR-16, FR-17, NFR-06
 
-- [ ] Choose and document a container runtime and threat boundary; validate the choice on Ubuntu and WSL2 before relying on it.
-- [ ] Restrict mounted/writable paths to the approved workspace and deny network access by default.
-- [ ] Require explicit authorization for the requested command/test scope; do not permit host-local command execution.
-- [ ] Enforce cancellation and the 120-second command timeout; collect bounded output and exit status.
-- [ ] Prevent uncertain command outcomes from triggering automatic re-execution.
-- [ ] Test workspace escape attempts, network denial, cancellation, timeout, output limits, and approval enforcement.
+- [x] Choose and document the Docker Engine/runc runtime profile and threat boundary in `sandbox_runtime.md`. It uses a local Linux daemon, cgroup v2, built-in seccomp, a pinned pre-provisioned image, and a read-only workspace. Enablement still requires host validation.
+- [x] Restrict mounted/writable paths to the approved workspace and deny network access by default in the Docker invocation. The workspace mount is read-only; file mutations use the reviewed-diff path.
+- [x] Require explicit authorization for the requested command/test scope; do not permit host-local command execution.
+- [x] Enforce cancellation and the configurable 120-second default command timeout; collect bounded output and exit status.
+- [x] Prevent uncertain command outcomes from triggering automatic re-execution.
+- [x] Add opt-in real-container tests for workspace escape attempts, network denial, output limits, nonzero exits, timeouts, cancellation, approval reuse/revocation, and changed network scope. Reject image-declared volumes, disable daemon output logs and image health checks, and require confirmed terminal container state. Deterministic tests also cover repeated-cancellation cleanup and transport behavior.
+- [ ] Run and record Docker profile acceptance on Ubuntu 24.04 x86-64 and Windows 11/WSL2 before relying on it. The current host is Ubuntu 22.04.5 and Docker socket access is denied. The live suite is implemented but has not run here; the sandbox remains disabled by default.
 
 ### B5. Budget, timeout, and retry controls — FR-08, FR-11, NFR-01, NFR-03
 
-- [ ] Enforce per-task token budget, per-request input/output limits, model context capacity, retrieval limits, row limits, and output-byte limits from section 5.6.
-- [ ] Pause and report when the task budget is reached; continue only after explicit user increase.
-- [ ] Enforce provider/tool, model idle/total, command, and total task deadlines from section 5.5.
-- [ ] Retry only transient failures, at most twice after initial attempt, using exponential backoff with jitter and provider retry guidance.
-- [ ] Never automatically retry permission/auth/input failures or mutations/commands with uncertain outcomes.
-- [ ] Mark truncated results and terminal timeout state clearly for the UI.
+- [x] Enforce per-task token budget, per-request input/output limits, model context capacity, retrieval limits, row limits, and output-byte limits from section 5.6.
+- [x] Pause and report when the task budget is reached; continue only after explicit user increase.
+- [x] Enforce provider/tool, model idle/total, command, and total task deadlines from section 5.5.
+- [x] Retry only transient failures, at most twice after initial attempt, using exponential backoff with jitter and provider retry guidance.
+- [x] Never automatically retry permission/auth/input failures or mutations/commands with uncertain outcomes.
+- [x] Mark truncated results and terminal timeout state clearly in task events/results; UI presentation is Workstream A.
 
 ### B6. Retention, credentials, and logging — FR-28, FR-31, NFR-04, NFR-07
 
-- [ ] Integrate the OS credential store; use memory-only credentials when unavailable and never persist plaintext fallback.
-- [ ] Redact secrets from errors/logs and exclude prompts, source, queries, and tool-result bodies from normal logs.
-- [ ] Delete raw retrieval and workspace copies at task end unless explicitly saved; do not delete user project/source data.
-- [ ] Expire redacted diagnostic logs after seven days and support explicit permanent saving/deletion.
-- [ ] Coordinate persisted conversation content with Workstream C; ordinary logs do not implement the later FR-31 action-history interface.
-- [ ] Test secret redaction, fallback, expiry, explicit log saving, and temporary-data cleanup.
+- [x] Integrate the Linux Secret Service credential store; use memory-only credentials when unavailable and never persist plaintext fallback. WSL credential-store availability still needs platform validation.
+- [x] Redact registered secrets and common credential patterns from streamed text, tool results, and errors; restrict normal diagnostics to operational metadata.
+- [x] Remove task-owned temporary directories at task end; persisted conversation messages follow conversation retention. The current application creates no separate durable retrieval/workspace copies.
+- [x] Expire unsaved diagnostic logs after seven days and support explicit permanent saving/deletion.
+- [x] Keep diagnostic logs separate from the repository-backed conversation; ordinary logs do not implement later FR-31 action history.
+- [x] Add deterministic tests for secret redaction, memory fallback, expiry, explicit log saving, and temporary-data cleanup.
 
 ### B7. Automated critical paths — NFR-12, section 5.8
 
-- [ ] Add deterministic tests for task transitions, cancellation, permissions, SQL read-only enforcement, sandbox policy, budgets, timeouts, retries, and state consistency.
-- [ ] Track aggregate branch coverage across domain, application, and security modules; reach at least 80%.
-- [ ] Coordinate adapter contract and desktop smoke tests with Workstreams A and C.
+- [x] Add deterministic tests for task transitions, cancellation, permissions, SQL read-only admission, sandbox invocation policy, budgets, timeouts, retries, and state consistency.
+- [x] Reach 80% aggregate branch coverage across domain, application, and security modules. Latest run: 88.79% branch coverage (309/348 branches); 103 tests passed and 3 opt-in live-container tests skipped. Ruff lint/format, mypy, and package build pass.
+- [x] Add a deterministic application/approval/sandbox/provider handoff test and publish the A/C acceptance checklist in `tests/integration/README.md`.
+- [ ] Complete integrated adapter contract and desktop smoke acceptance with Workstreams A and C on both supported platforms. The handoff is documented; contributor review and A/C/platform results remain Pending.
 
 ## Workstream C — Providers, Connectors, and Persistence Foundations
 
@@ -258,8 +260,8 @@ Every functional and non-functional requirement ID appears in one or more owned 
 These affect implementation but were not fixed by the requirements answers. Decide them in S0 or the owning task and update context with the decision:
 
 - Desktop GUI framework, application packaging and WSL2 GUI launch approach (A).
-- Container runtime and enforceable sandbox profile on Ubuntu and WSL2 (B).
-- Internal database selected as SQLite through Python's standard library; migrations beyond schema version 1, local data encryption/backup design, and cleanup scheduling remain open (C with B for retention).
+- Container runtime/profile is selected as Docker Engine/runc with a local Linux daemon and read-only workspace (B); both target-platform acceptance runs remain Pending. See `sandbox_runtime.md`.
+- Internal database is SQLite through Python's standard library; migrations beyond schema version 1, local data encryption/backup design, and cleanup scheduling remain open (C with B for retention).
 - Exact supported model IDs and per-model context windows remain open. Optional connector client ranges are declared in `pyproject.toml` and require adapter compatibility validation (C).
 - Embedding model selection to turn natural-language retrieval requests into query vectors remains open (C with B orchestration).
 - Reference machines, representative models, benchmark fixtures, and how p95 is measured (A/B/C together).

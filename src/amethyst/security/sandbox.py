@@ -1,6 +1,7 @@
 """Docker-only, read-only workspace execution with bounded output and cleanup."""
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ from uuid import uuid4
 
 from amethyst.configuration.limits import Limits
 from amethyst.domain.contracts import (
+    ApprovalStatus,
     ContractError,
     ErrorCode,
     OperationContext,
@@ -32,13 +34,41 @@ class ProcessResult:
 class ContainerTransport(Protocol):
     async def run(
         self, args: tuple[str, ...], timeout: float, output_limit: int
-    ) -> ProcessResult: ...
+    ) -> ProcessResult:
+        """Invoke the configured container client with bounded output.
+
+        Parameters
+        ----------
+        args : tuple[str, ...]
+            Container-client arguments.
+        timeout : float
+            Maximum duration in seconds.
+        output_limit : int
+            Combined output byte cap.
+
+        Returns
+        -------
+        ProcessResult
+            Client exit status and captured output.
+        """
+        ...
 
 
 class DockerTransport:
     """Only executes the configured Docker client; never accepts a host command."""
 
     def __init__(self, socket: Path = Path("/var/run/docker.sock")) -> None:
+        """Select the Docker executable and an explicit local Unix socket.
+
+        Parameters
+        ----------
+        socket : Path
+            Absolute local daemon socket; remote contexts are not used.
+
+        Returns
+        -------
+        None
+        """
         executable = shutil.which("docker")
         if executable is None:
             raise ContractError(ErrorCode.UNAVAILABLE, "Docker is not installed.")
@@ -50,6 +80,22 @@ class DockerTransport:
     async def run(
         self, args: tuple[str, ...], timeout: float, output_limit: int
     ) -> ProcessResult:
+        """Run Docker with a sanitized environment and drain both output streams.
+
+        Parameters
+        ----------
+        args : tuple[str, ...]
+            Docker arguments, never a host shell command.
+        timeout : float
+            Maximum client duration in seconds.
+        output_limit : int
+            Combined stdout/stderr byte cap.
+
+        Returns
+        -------
+        ProcessResult
+            Status and bounded UTF-8 output; invalid byte sequences are omitted.
+        """
         process = await asyncio.create_subprocess_exec(
             self.executable,
             "--host",
@@ -65,6 +111,19 @@ class DockerTransport:
         truncated = False
 
         async def drain(stream: asyncio.StreamReader | None, target: bytearray) -> None:
+            """Drain a pipe while sharing the combined byte budget.
+
+            Parameters
+            ----------
+            stream : asyncio.StreamReader or None
+                Subprocess pipe.
+            target : bytearray
+                Destination for retained bytes.
+
+            Returns
+            -------
+            None
+            """
             nonlocal total, truncated
             assert stream is not None
             while chunk := await stream.read(8192):
@@ -91,8 +150,8 @@ class DockerTransport:
             raise
         return ProcessResult(
             process.returncode or 0,
-            captured[0].decode(errors="replace"),
-            captured[1].decode(errors="replace"),
+            captured[0].decode(errors="ignore"),
+            captured[1].decode(errors="ignore"),
             truncated,
         )
 
@@ -115,6 +174,27 @@ class DockerSandbox:
         enabled: bool = False,
         limits: Limits | None = None,
     ) -> None:
+        """Configure a disabled-by-default sandbox for one approved workspace.
+
+        Parameters
+        ----------
+        workspace : Path
+            Existing workspace directory.
+        image : str
+            Trusted pre-provisioned image pinned by digest.
+        approvals : ApprovalEngine
+            Shared user-approval service.
+        transport : ContainerTransport
+            Local Docker client or deterministic test double.
+        enabled : bool
+            Trusted bootstrap switch, set only after host validation.
+        limits : Limits or None
+            Configured command/output ceilings.
+
+        Returns
+        -------
+        None
+        """
         self.workspace = workspace.resolve(strict=True)
         self.image = image
         self.approvals = approvals
@@ -129,6 +209,17 @@ class DockerSandbox:
             raise ValueError("Workspace path cannot be represented safely as a mount.")
 
     def _validate(self, request: SandboxRequest) -> None:
+        """Reject commands outside the configured workspace or resource limits.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Proposed command.
+
+        Returns
+        -------
+        None
+        """
         relative = PurePosixPath(request.working_directory)
         if (
             request.workspace != self.workspace
@@ -161,6 +252,18 @@ class DockerSandbox:
             )
 
     def proposal(self, request: SandboxRequest) -> ProposedAction:
+        """Bind command, image, network scope, and limits to an approval fingerprint.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Command to present for explicit review.
+
+        Returns
+        -------
+        ProposedAction
+            Exact action required before execution.
+        """
         self._validate(request)
         scope = (
             str(self.workspace),
@@ -182,12 +285,35 @@ class DockerSandbox:
         )
 
     def _create_args(self, request: SandboxRequest, name: str) -> tuple[str, ...]:
+        """Build the fixed container profile without invoking a host shell.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Validated command and resource limits.
+        name : str
+            Unique name used for lifecycle management.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Docker create arguments.
+        """
         return (
             "create",
             "--name",
             name,
             "--pull",
             "never",
+            "--runtime",
+            "runc",
+            "--ipc",
+            "private",
+            "--cgroupns",
+            "private",
+            "--no-healthcheck",
+            "--log-driver",
+            "none",
             "--read-only",
             "--cap-drop",
             "ALL",
@@ -217,9 +343,153 @@ class DockerSandbox:
             *request.argv[1:],
         )
 
+    async def _check_image(self) -> None:
+        """Reject image volumes that would bypass workspace and retention policy.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Only local image metadata is read; missing images are never pulled.
+        The pinned image and the local daemon remain trusted components.
+        """
+        result = await self.transport.run(
+            ("image", "inspect", "--format", "{{json .Config.Volumes}}", self.image),
+            10,
+            4096,
+        )
+        if (
+            result.returncode
+            or result.truncated
+            or result.stdout.strip()
+            not in {
+                "null",
+                "{}",
+            }
+        ):
+            raise ContractError(
+                ErrorCode.UNAVAILABLE,
+                "A local image without declared volumes is required.",
+            )
+
+    async def _execute(
+        self, request: SandboxRequest, name: str, limit: int
+    ) -> SandboxResult:
+        """Create, attach, and confirm a terminal container state exactly once.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Authorized command.
+        name : str
+            Container lifecycle identifier.
+        limit : int
+            Combined output byte limit.
+
+        Returns
+        -------
+        SandboxResult
+            Confirmed command result.
+        """
+        created = await self.transport.run(self._create_args(request, name), 15, 4096)
+        if created.returncode:
+            raise ContractError(
+                ErrorCode.UNAVAILABLE, "Container could not be created."
+            )
+        output = await self.transport.run(
+            ("start", "--attach", name), request.timeout_seconds, limit
+        )
+        status = await self.transport.run(
+            ("inspect", "--format", "{{json .State}}", name), 10, 4096
+        )
+        try:
+            state = json.loads(status.stdout)
+            if (
+                status.returncode
+                or status.truncated
+                or not isinstance(state, dict)
+                or state.get("Status") != "exited"
+                or state.get("Running") is not False
+                or state.get("Error") != ""
+                or type(state.get("ExitCode")) is not int
+                or not 0 <= state["ExitCode"] <= 255
+                or (output.returncode and output.returncode != state["ExitCode"])
+            ):
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ContractError(
+                ErrorCode.OUTCOME_UNKNOWN, "Container outcome could not be confirmed."
+            ) from None
+        return SandboxResult(
+            state["ExitCode"], output.stdout, output.stderr, truncated=output.truncated
+        )
+
+    async def _remove(self, name: str) -> None:
+        """Finish bounded container cleanup even after repeated cancellation.
+
+        Parameters
+        ----------
+        name : str
+            Container to stop and remove.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Unconfirmed cleanup is an uncertain outcome, never a successful command.
+        """
+        cleanup = asyncio.create_task(
+            self.transport.run(("rm", "--force", "--volumes", name), 15, 4096)
+        )
+        cancelled = False
+        try:
+            while True:
+                try:
+                    removed = await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    if cleanup.cancelled():
+                        raise RuntimeError("Cleanup was cancelled.") from None
+                    cancelled = True
+            if removed.returncode:
+                raise RuntimeError("Cleanup failed.")
+        except Exception:
+            raise ContractError(
+                ErrorCode.OUTCOME_UNKNOWN, "Container cleanup could not be confirmed."
+            ) from None
+        if cancelled:
+            raise asyncio.CancelledError
+
     async def run(
         self, request: SandboxRequest, context: OperationContext
     ) -> SandboxResult:
+        """Execute one approved command within the validated container profile.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Exact command and reviewed approval reference.
+        context : OperationContext
+            Active task, session, and remaining limits.
+
+        Returns
+        -------
+        SandboxResult
+            Confirmed exit status or timeout after cleanup.
+
+        Notes
+        -----
+        The caller enables this adapter only after host acceptance. Cancellation
+        waits for cleanup; commands and uncertain outcomes are never retried.
+        """
         if not self.enabled:
             raise ContractError(
                 ErrorCode.UNAVAILABLE, "Sandbox is disabled pending runtime validation."
@@ -229,77 +499,34 @@ class DockerSandbox:
         if (
             proposal.fingerprint != request.fingerprint
             or proposal not in reviewed.request.actions
+            or reviewed.status != ApprovalStatus.GRANTED
         ):
             raise ContractError(
                 ErrorCode.PERMISSION_DENIED, "Sandbox proposal changed."
             )
-        await self.approvals.consume(
-            request.approval_id,
-            request.action_id,
-            proposal.fingerprint,
-            context,
-        )
         name = f"amethyst-{uuid4().hex}"
         limit = min(request.output_limit_bytes, context.output_limit_bytes)
         result: SandboxResult
+        create_attempted = False
         try:
             # Whole create/start/inspect phase shares the command deadline.
             async with asyncio.timeout(
                 min(request.timeout_seconds, context.timeout_seconds)
             ):
-                created = await self.transport.run(
-                    self._create_args(request, name), 15, 4096
+                await self._check_image()
+                # Image inspection can yield; recheck revocation immediately
+                # before the first container mutation, then consume exactly once.
+                await self.approvals.consume(
+                    request.approval_id,
+                    request.action_id,
+                    proposal.fingerprint,
+                    context,
                 )
-                if created.returncode:
-                    raise ContractError(
-                        ErrorCode.UNAVAILABLE, "Container could not be created."
-                    )
-                output = await self.transport.run(
-                    ("start", "--attach", name), request.timeout_seconds, limit
-                )
-                status = await self.transport.run(
-                    ("inspect", "--format", "{{.State.ExitCode}}", name), 10, 128
-                )
-                if status.returncode:
-                    raise ContractError(
-                        ErrorCode.OUTCOME_UNKNOWN,
-                        "Container outcome could not be confirmed.",
-                    )
-                try:
-                    code = int(status.stdout.strip())
-                except ValueError:
-                    raise ContractError(
-                        ErrorCode.OUTCOME_UNKNOWN, "Invalid container exit status."
-                    ) from None
-                result = SandboxResult(
-                    code, output.stdout, output.stderr, truncated=output.truncated
-                )
+                create_attempted = True
+                result = await self._execute(request, name, limit)
         except TimeoutError:
             result = SandboxResult(None, outcome="timeout")
         finally:
-            # rm -f stops the container, even when its client was interrupted.
-            # Shield cleanup so one cancellation cannot leave it running.
-            cleanup = asyncio.create_task(
-                self.transport.run(("rm", "--force", name), 15, 4096)
-            )
-            try:
-                removed = await asyncio.shield(cleanup)
-            except asyncio.CancelledError:
-                removed = await cleanup
-                if removed.returncode:
-                    raise ContractError(
-                        ErrorCode.OUTCOME_UNKNOWN,
-                        "Container cleanup could not be confirmed.",
-                    ) from None
-                raise
-            except Exception:
-                raise ContractError(
-                    ErrorCode.OUTCOME_UNKNOWN,
-                    "Container cleanup could not be confirmed.",
-                ) from None
-            if removed.returncode:
-                raise ContractError(
-                    ErrorCode.OUTCOME_UNKNOWN,
-                    "Container cleanup could not be confirmed.",
-                )
+            if create_attempted:
+                await self._remove(name)
         return result
