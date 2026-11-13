@@ -32,11 +32,17 @@ Add or update tests for behavior changes and important permission, tool executio
 Requirements section 5.8 defines the release gate; implementation and results remain `Pending`.
 
 - All critical-path tests must pass: approval denial/revocation, lifetime and batch scope, changed-diff invalidation, read-only SQL, sandbox boundaries and default network denial, cancellation, timeouts/retries, budget enforcement, secret redaction, and task-state consistency.
-- Achieve at least 80% aggregate branch coverage across `domain/`, `application/`, and `security/`. Coverage tooling and enforcement configuration: `Pending`.
+- Achieve at least 80% aggregate branch coverage across `domain/`, `application/`, and `security/`. `pytest-cov` and branch measurement are configured in `pyproject.toml`. Its `fail_under` checks combined statement/branch coverage; also inspect `covered_branches / num_branches` in the coverage JSON for the required branch-only gate. Latest run: 309/348 branches (88.79%), 103 passed, 3 opt-in live-container tests skipped.
 - Provide adapter contract tests for OpenAI API, Gemini API, DeepSeek API, local Ollama, SQLite 3, PostgreSQL 16+, locally hosted Qdrant/Milvus/ChromaDB, and Brave Search API.
 - Run desktop smoke tests on Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2. Include chat, settings, approvals, conversation viewing/resumption/deletion, and sandboxed command/test execution.
 - Verify retention and credential handling: conversations remain until deleted, ordinary redacted logs expire after seven days, explicitly saved logs persist until deleted, temporary raw data is cleaned up, and unavailable credential stores trigger memory-only fallback.
 - Deterministic automated checks must run without live credentials. Live-service and performance checks require explicit configuration and separate environment reporting.
+
+## Workstream B Validation
+
+Run `uv run pytest --cov --cov-report=term-missing --cov-report=json:/tmp/amethyst-coverage.json`, Ruff lint/format checks, `uv run mypy src tests`, and `uv build`. `tests/integration/test_agent_sandbox.py` covers the application/approval/sandbox/provider boundary with doubles. `test_live_sandbox.py` exercises real container boundaries, default network denial, exit reporting, output caps, timeouts, cancellation, and approval scope; it skips unless explicitly enabled. See `docs/sandbox_runtime.md` for profile prerequisites, report metadata, and commands.
+
+The current development host is Ubuntu 22.04.5 with inaccessible Docker socket; real-container acceptance has not run. Ubuntu 24.04 and Windows 11/WSL2 results remain Pending. Desktop/adapter handoff checks are in `tests/integration/README.md`; they do not claim contributor review or completed A/C integration.
 
 ## Performance Acceptance
 

@@ -2,7 +2,7 @@
 
 ## Backend Stack
 
-Python 3.13+ with standard-library DTOs and async protocols; runtime vendor dependencies remain `Pending`. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
+Python 3.13+ with standard-library DTOs and async protocols. `keyring` supplies the explicitly selected Linux Secret Service backend; provider/connector SDK dependencies remain Pending. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
 
 ## Directory Structure
 
@@ -22,11 +22,11 @@ See `.ai-context/ENVIRONMENT.md`. Do not include secret values.
 
 ## Endpoints and Interfaces
 
-S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for stream/error/cancellation semantics, approvals, repositories, credential references, and sandbox invocation. `adapters/fakes.py` provides deterministic development doubles; approval and sandbox placeholders fail closed. GUI transport and live-service acceptance remain `Pending`.
+S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for stream/error/cancellation semantics, approvals, repositories, credential references, and sandbox invocation, and `docs/workstream_b_summary.md` for composing `AgentService`, permission/approval services, workspace tools, credentials, and retention. `adapters/fakes.py` provides deterministic development doubles; approval and sandbox placeholders fail closed. GUI transport, live provider/connector validation, and platform acceptance remain `Pending`.
 
 Provider adapters use the standard-library HTTP client and stream SSE/NDJSON. PostgreSQL and vector-store clients are optional dependencies declared in the `postgresql`, `qdrant`, `chroma`, `milvus`, and combined `integrations` extras. Install them with `uv sync --extra integrations` when using all adapters. Model IDs, exact per-model context windows, SDK versions, and live-service results remain `Pending`.
 
-Commands and tests must execute in a container sandbox restricted to the approved workspace, with network access disabled by default. Host-local execution is outside the approved initial scope. The `Sandbox` protocol and disabled placeholder exist. Container runtime and production enforcement: `Pending`.
+Commands and tests use `security.sandbox.DockerSandbox`, with Docker Engine/runc, a local Unix socket, and a trusted digest-pinned image. The workspace is read-only, network is denied by default, implicit image volumes are rejected, daemon output logging and image health checks are disabled, and cleanup/terminal state are confirmed. Host-local fallback is absent. Runtime remains disabled until host validation; Ubuntu 24.04 and Windows/WSL2 acceptance are Pending. Read `docs/sandbox_runtime.md` before configuring or changing this boundary.
 
 ## Data and Persistence
 
@@ -40,7 +40,7 @@ Conversations persist locally until deleted, with MVP viewing/resumption/deletio
 - Consume approval on execution and expire it no later than task completion. Read-only session grants end on app exit; revocation blocks further protected actions.
 - Enforce the configurable time, token, retrieval, result-size, and retry defaults in requirements sections 5.5 and 5.6. Pause at the task token budget until explicitly increased.
 - Retry only transient failures, at most twice after the initial attempt; never automatically repeat file mutations or commands with uncertain outcomes.
-- Enforcement implementation: `Pending`.
+- Enforcement is implemented in `application/limits.py`, `configuration/limits.py`, and `security/`. Deterministic tests pass; production composition with A/C and platform acceptance remain Pending.
 
 ## Debugging
 

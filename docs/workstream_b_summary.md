@@ -1,6 +1,6 @@
 # Workstream B Programmer Guide
 
-This guide describes the Workstream B changes on `feature/agent-security`, including the current uncommitted working-tree changes. Workstream A (desktop UI) and Workstream C (live providers/connectors and durable persistence) remain separate.
+This guide describes the implemented Workstream B application and security services, including Docker validation work on `feature/agent-security-docker-integration`. Workstream A (desktop UI) and Workstream C (live providers/connectors and durable persistence) remain separate.
 
 ## What the code provides
 
@@ -12,7 +12,7 @@ This guide describes the Workstream B changes on `feature/agent-security`, inclu
 
 `amethyst.application.limits` and `amethyst.configuration.limits.Limits` enforce the documented defaults for task/model/tool/command deadlines, token budgets, retrieval and SQL result counts, output bytes, and retry count. Budget exhaustion pauses before another model request; an explicit positive increase resumes the task. The task deadline stops counting during approval waits. Retries require a transient provider/tool failure and a safe read-only operation with a session grant. SQL admission rejects known write or unsafe constructs; a production SQL adapter must also use database-enforced read-only transactions and credentials.
 
-`amethyst.security.sandbox.DockerSandbox` constructs Docker invocations for an image pinned by digest. It mounts only the approved workspace read-only, denies network access by default, drops capabilities, enables `no-new-privileges`, applies resource limits, bounds output, and removes the container after completion, timeout or cancellation. The runtime must be explicitly enabled after host validation. No host-command fallback exists. Write commands cannot modify the workspace; file changes go through `Workspace` and reviewed diffs.
+`amethyst.security.sandbox.DockerSandbox` uses Docker Engine/runc and an image pinned by digest. It mounts only the approved workspace read-only, denies network access by default, drops capabilities, enables `no-new-privileges`, applies resource limits, bounds output, and removes the container after completion, timeout or cancellation. It rejects image-declared volumes, disables image health checks and daemon output logging, requires confirmed terminal state, and waits for cleanup even after repeated cancellation. The runtime must be explicitly enabled after host validation. No host-command fallback exists. Write commands cannot modify the workspace; file changes go through `Workspace` and reviewed diffs. See [runtime profile and acceptance](sandbox_runtime.md).
 
 `amethyst.security.credentials.OSCredentialStore` uses Linux Secret Service when available, with an in-memory fallback. It does not select arbitrary keyring plugins or fall back to plaintext files. `Redactor` and `StreamRedactor` remove known credentials and common token/password patterns before messages and output are persisted or emitted. `DiagnosticStore` accepts only enumerated operational metadata, expires unsaved records after seven days, and supports explicit permanent save/delete. `TaskTemporaryData` removes only directories it created.
 
@@ -38,7 +38,9 @@ service = AgentService(
     permissions=permissions,
     tools=(),
 )
-task = await service.start_task(StartTask("conversation-id", "Review this change", "model-connection"))
+task = await service.start_task(
+    StartTask("conversation-id", "Review this change", "model-connection")
+)
 async for event in service.events(task.id):
     if isinstance(event.payload, ApprovalRequest):
         # Present exactly the listed action and diff, then pass the user's choice.
@@ -56,13 +58,13 @@ Read file access requires `permissions.grant("workspace.read", str(workspace_roo
 
 ## Tests and checks
 
-Workstream B tests are in `tests/unit/test_agent_service.py`, `test_security.py`, `test_limits_retention.py`, and `test_sandbox.py`. The sandbox tests inject a fake transport and never contact Docker. The last full run passed 89 tests and reported 83.92% branch coverage over `domain/`, `application/`, and `security/`. Ruff, mypy and a package build also passed during implementation. Re-run with:
+Workstream B unit tests cover application, permissions, limits, retention, sandbox policy, and subprocess transport. `tests/integration/test_agent_sandbox.py` verifies application/approval/provider handoff with a daemon double. `test_live_sandbox.py` adds explicitly configured real-container acceptance and never contacts Docker during the default test run. The last full run passed 103 tests, skipped three opt-in live tests, and reported 88.79% branch coverage (309/348 branches) over `domain/`, `application/`, and `security/`. Ruff, mypy and a package build also passed. Re-run with:
 
 ```bash
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src tests
-uv run pytest --cov --cov-report=term-missing
+uv run pytest --cov --cov-report=term-missing --cov-report=json:/tmp/amethyst-coverage.json
 uv build
 ```
 
@@ -71,7 +73,7 @@ uv build
 - The current conversation repository is injected. Production retention across restarts, migrations and deletion coordination depend on Workstream C's durable repositories.
 - Provider settings/secret references and live connectors depend on Workstream C. The application accepts provider/tool bindings; it does not implement vendor SDK adapters.
 - Workstream A must expose user controls for permissions, approval decisions, cancellation and explicit budget increases, and display progress, truncation and terminal outcomes.
-- Docker is disabled until its image, daemon and runtime policy are configured and validated. The sandbox tests validate command construction and lifecycle with a fake transport; they do not validate container isolation.
-- This implementation environment was Ubuntu 22.04, not the approved Ubuntu 24.04 x86-64 or Windows 11/WSL2 targets. Sandbox escape/network tests and credential-store behavior still require platform acceptance testing.
+- Docker is disabled until its image, daemon and runtime policy are configured and validated. The real-container suite and profile are ready; execute the documented commands on both target configurations and retain the JUnit environment/results report.
+- This implementation environment is Ubuntu 22.04.5, not the approved Ubuntu 24.04 x86-64 or Windows 11/WSL2 targets. Docker socket access is denied here. Live sandbox and credential-store behavior still require platform acceptance testing. A/C handoff expectations are in `tests/integration/README.md`.
 - The read-only SQL validator is a conservative admission filter, not a substitute for connector-side database permissions. Query dialects and side-effecting functions require adapter-specific tests.
 - Python function length and Numpydoc cleanup was requested separately and is not complete yet. Several application methods still exceed 100 lines, and most functions do not yet have Numpydoc docstrings.
