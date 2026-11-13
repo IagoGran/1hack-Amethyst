@@ -55,6 +55,7 @@ You do not need to read every document for every task. Do not inspect code until
 ### Specialized Documents
 
 - `TESTING.md`: test conventions and approved MVP acceptance and coverage gates.
+- `docs/s0_contract_baseline.md`: implemented S0 interface proposals, fake behavior, branch integration, and pending technology decisions.
 - `docs/implementation_plan.md`: three-person MVP tasks, branch ownership, dependency order, and requirement coverage.
 
 ## Maintenance Rules

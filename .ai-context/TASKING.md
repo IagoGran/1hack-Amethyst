@@ -24,7 +24,7 @@ Keep documentation consistent with requirements and actual project status. Do no
 
 Use `<type>/<short-kebab-case-description>`, for example `feature/tool-approval`, `fix/task-cancellation`, `docs/context-guide`, or `refactor/provider-ports`.
 
-For the three-person MVP implementation, use the ownership, branch names, task breakdown, shared-contract workflow, and dependencies in `docs/implementation_plan.md`. The current ownership is Iago (Person A / Workstream A), Hugo (Person B / Workstream B), and Antonio (Person C / Workstream C). Replace the proposed `main` base if the team uses a different integration branch. Keep workstream PRs independently mergeable; coordinate shared contracts before cross-branch implementation.
+For the three-person MVP implementation, use the ownership, branch names, task breakdown, shared-contract workflow, and dependencies in `docs/implementation_plan.md`. The current ownership is Iago (Person A / Workstream A), Hugo (Person B / Workstream B), and Antonio (Person C / Workstream C). The owner confirmed `dev` as the integration branch for S0, implemented on `feature/contracts` and merged after checks pass. Planned workstream branches are `feature/mvp-desktop`, `feature/mvp-agent-security`, and `feature/mvp-integrations`; preserve existing differently named branches. Keep workstream PRs independently mergeable; coordinate shared contracts before cross-branch implementation.
 
 ### Commits
 

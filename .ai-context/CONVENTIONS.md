@@ -10,7 +10,7 @@
 
 ## Repository Structure
 
-The Python application lives in `src/1hack_amethyst/`: `application/` for use cases, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, and `configuration/` for configuration. A standalone desktop GUI is approved; its framework, implementation, and location remain `Pending`. `src/llm/agent.py` is pre-existing code; migration or removal is `Pending`.
+The Python application lives in `src/amethyst/`: `application/` for use cases, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, and `configuration/` for configuration. The distribution/CLI stays `1hack-amethyst`; normal Python imports use `amethyst`. Shared DTOs are in `domain/contracts.py`, async protocols are in `ports/`, and explicit development doubles are in `adapters/fakes.py`. A standalone desktop GUI is approved; its framework, implementation, and location remain `Pending`. `src/llm/agent.py` is pre-existing code; migration or removal is `Pending`.
 
 ## Style and Standards
 

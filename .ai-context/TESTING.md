@@ -15,11 +15,15 @@
 
 ## Type Checking
 
-Use gradual typing with `mypy`. Annotate new and modified interfaces and functions where useful; unannotated legacy code remains allowed. Run `uv run mypy`.
+Use gradual typing with `mypy`. Annotate new and modified interfaces and functions where useful; unannotated legacy code remains allowed. Run `uv run mypy src tests` to check both implementation and the tests that assign doubles to port types.
 
 ## Test Policy
 
 Add or update tests for behavior changes and important permission, tool execution, and task-state paths (NFR-12). Do not run tests unless the user requests testing or the agreed task workflow explicitly requires it. Report any checks that were not run.
+
+## S0 Baseline Checks
+
+`tests/unit/test_contract_baseline.py` checks fake model/tool results, task event ordering/replay, cancellation, repository snapshot isolation, memory credentials, deny-all approvals, and disabled sandbox behavior. `tests/integration/test_launch.py` checks the provisional module launcher. Run the suite without live services or credentials. S0 requires Ruff lint/format checks, mypy, pytest, a package build, and a fresh-wheel import/CLI smoke check before merging into `dev`. These checks do not establish desktop acceptance, durable retention, or the MVP coverage gate.
 
 ## Approved MVP Acceptance Gate
 

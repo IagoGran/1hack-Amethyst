@@ -26,7 +26,7 @@ See `.ai-context/ENVIRONMENT.md`. Frontend-specific variables: `Pending`.
 
 ### APIs
 
-Contract and transport: `Pending`.
+The logical boundary is `amethyst.ports.application.ApplicationService`, with async calls and sequenced task-event streams. `FakeApplicationService` in `adapters/fakes.py` supports independent UI development. Repositories and `ApprovalService` are separate ports; the approval placeholder always denies execution. See `docs/s0_contract_baseline.md` for call/event semantics. GUI event-loop bridge, transport, and process topology: `Pending`.
 
 ### Authentication
 

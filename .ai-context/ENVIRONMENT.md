@@ -8,7 +8,7 @@
 
 ## Environment Differences
 
-Desktop smoke tests must cover both supported platform configurations, including GUI operation through WSL2. Credential-store availability must be handled explicitly: use memory-only credentials when the store is unavailable, including in WSL setups. Other development/release environment differences: `Pending`.
+Desktop smoke tests must cover both supported platform configurations, including GUI operation through WSL2. Credential-store availability must be handled explicitly: use memory-only credentials when the store is unavailable, including in WSL setups. S0 uses Python 3.13+ and credential-free fakes; development checks do not require a container runtime or desktop display. These developer checks are distinct from product command execution, which remains container-only. Other development/release environment differences: `Pending`.
 
 ## Environment Variables
 
@@ -49,7 +49,7 @@ Limits are configurable. Budget exhaustion pauses work until explicitly increase
 - Expire redacted diagnostic logs after seven days. Provide an explicit option to save selected logs permanently until deleted, preserving redaction.
 - Store credentials in the OS credential store. If unavailable, keep them only in memory and request them again after restart. Never fall back to plaintext disk storage.
 - Normal logs contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Keep secrets out of ordinary chat, logs, errors, and configuration exports.
-- Storage implementation and cleanup scheduling: `Pending`. See requirements section 5.7 for acceptance checks.
+- Durable storage implementation and cleanup scheduling: `Pending`. S0 memory repositories and credentials are explicit development doubles and do not survive restart. See requirements section 5.7 for acceptance checks.
 
 ## Security Considerations
 

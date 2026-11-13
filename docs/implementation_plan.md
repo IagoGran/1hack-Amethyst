@@ -4,7 +4,7 @@ This plan turns the requirements in `project_requirements.md` into owned tasks a
 
 ## Branches and Ownership
 
-Use the same integration branch as the base for three long-running workstream branches. Replace `main` below if the repository uses a different integration branch.
+Use `dev` as the integration branch for the three long-running workstream branches, confirmed by the project owner on 2026-11-13. S0 is implemented on `feature/contracts` and merged into `dev` after validation. Preserve existing branches with other names.
 
 | Contributor | Workstream | Branch | Primary ownership |
 |---|---|---|---|
@@ -19,11 +19,13 @@ Iago owns Person A / Workstream A, Hugo owns Person B / Workstream B, and Antoni
 ### S0. Establish the integration baseline — all contributors, before feature work
 
 - [ ] Confirm the integration branch and create the three branches in the table.
-- [ ] Review the existing skeleton and identify current interfaces, launch path, persistence, and test commands.
-- [ ] Turn the pending implementation choices below into small contract proposals; do not silently treat the proposals here as approved architecture.
+- [x] Review the existing skeleton and identify current interfaces, launch path, persistence, and test commands. See `s0_contract_baseline.md`.
+- [x] Turn the pending implementation choices below into small contract proposals; do not silently treat the proposals here as approved architecture. Concrete interface proposals and bounded technology evaluations are in `s0_contract_baseline.md`.
 - [ ] Agree on minimal contracts and placeholder implementations for desktop-to-application calls, model providers, tools, approvals, task events, persistence, and sandbox invocation.
 - [ ] Merge the contract-only PR first. Rebase or merge it into all three workstream branches before implementing against it.
-- [ ] Record contract decisions in the relevant `.ai-context/` guides. Leave undecided technology as `Pending`.
+- [x] Record contract decisions in the relevant `.ai-context/` guides. Leave undecided technology as `Pending`.
+
+S0 code is implemented: async ports, shared task/event/request/result types, deterministic fakes, detached in-memory repositories, memory credentials, deny-all approvals, and a disabled sandbox. The Python package is now `amethyst`; the distribution and CLI remain `1hack-amethyst`. Contributor acknowledgment of these reviewable proposals remains **Pending**; no approval from absent contributors is asserted. Hosted PR creation/review remains **Pending** GitHub access. Local merge/synchronization proceeds under the owner's explicit instruction after checks pass. These process items remain open rather than being reported as completed PR/team review.
 
 ### Branch operation
 
@@ -246,4 +248,4 @@ These affect implementation but were not fixed by the requirements answers. Deci
 - Internal database, migrations, local data encryption/backup design, and cleanup scheduling (C with B for retention).
 - Exact supported model IDs, API SDKs, and connector versions (C).
 - Reference machines, representative models, benchmark fixtures, and how p95 is measured (A/B/C together).
-- Contributor names and integration branch name (all contributors).
+- Contributor names and integration branch name are resolved: Iago (A), Hugo (B), Antonio (C), and `dev`. Separate contributor acknowledgment of the S0 contract proposals remains Pending.

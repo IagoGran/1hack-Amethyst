@@ -9,6 +9,8 @@ class TaskStatus(StrEnum):
 
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED_FOR_BUDGET = "paused_for_budget"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     FAILED = "failed"
@@ -21,3 +23,4 @@ class Task:
     id: str
     request: str
     status: TaskStatus = TaskStatus.PENDING
+    conversation_id: str = ""
