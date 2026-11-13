@@ -7,12 +7,15 @@ authors = [
     { name = "IagoGran", email = "iago@iago-grandal.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "keyring>=25.7.0",
+]
 
 [dependency-groups]
 dev = [
     "mypy",
     "pytest",
+    "pytest-cov>=7.1.0",
     "ruff",
 ]
 
@@ -47,3 +50,12 @@ warn_return_any = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra"
+markers = ["live_sandbox: opt-in Docker boundary tests on a supported host"]
+
+[tool.coverage.run]
+branch = true
+source = ["amethyst.domain", "amethyst.application", "amethyst.security"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
