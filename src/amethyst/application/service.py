@@ -45,6 +45,8 @@ from amethyst.skills.selection import select_skills
 
 SYSTEM = (
     "Assess the supplied conversation for already completed and partial work. "
+    "For greetings or simple checks that you are available, answer directly "
+    "without calling tools or inspecting files. "
     "Use only relevant context and enabled tools. Before any tool call, explain "
     "your plan in response text when possible; never print tool-call JSON as a "
     "user-facing answer. Never claim an action succeeded before examining "

@@ -144,13 +144,17 @@ class ProviderModel(Model):
         )
 
 
-def to_ai_messages(messages: list[Message]) -> list[ModelMessage]:
+def to_ai_messages(
+    messages: list[Message], enabled_tool_names: set[str]
+) -> list[ModelMessage]:
     """Convert retained Amethyst history into PydanticAI conversation messages.
 
     Parameters
     ----------
     messages : list[Message]
         Prior conversation messages, excluding the current user prompt.
+    enabled_tool_names : set[str]
+        Tool names available during the current task.
 
     Returns
     -------
@@ -165,6 +169,10 @@ def to_ai_messages(messages: list[Message]) -> list[ModelMessage]:
         elif message.role == "system":
             converted.append(AIRequest([SystemPromptPart(message.content)]))
         elif message.role == "assistant":
+            if not message.tool_calls and _is_tool_envelope(
+                message.content, enabled_tool_names
+            ):
+                continue
             parts: list[Any] = [TextPart(message.content)] if message.content else []
             for call in message.tool_calls:
                 tool_names[call.id] = call.name
@@ -191,6 +199,41 @@ def to_ai_messages(messages: list[Message]) -> list[ModelMessage]:
                 )
             )
     return converted
+
+
+def _is_tool_envelope(text: str, enabled_tool_names: set[str]) -> bool:
+    """Identify a stale tool-call JSON bubble to omit from model history.
+
+    Parameters
+    ----------
+    text : str
+        Persisted assistant message text.
+    enabled_tool_names : set[str]
+        Tools enabled for the resumed task.
+
+    Returns
+    -------
+    bool
+        Whether the message is an unexecuted envelope for an enabled tool.
+    """
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"name", "arguments"}
+        or not isinstance(payload["name"], str)
+        or payload["name"] not in enabled_tool_names
+    ):
+        return False
+    arguments = payload["arguments"]
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            return False
+    return isinstance(arguments, dict)
 
 
 def from_ai_messages(messages: list[ModelMessage]) -> list[Message]:
@@ -297,7 +340,12 @@ def _call_arguments(arguments: str | dict[str, Any] | None) -> dict[str, Any]:
     return {}
 
 
-def build_tools(service: Any, record: RunningTask, title: str) -> list[Tool[Any]]:
+def build_tools(
+    service: Any,
+    record: RunningTask,
+    title: str,
+    definitions: tuple[ToolDefinition, ...] | None = None,
+) -> list[Tool[Any]]:
     """Create PydanticAI function tools backed by the trusted dispatcher.
 
     Parameters
@@ -308,6 +356,8 @@ def build_tools(service: Any, record: RunningTask, title: str) -> list[Tool[Any]
         Task receiving tool outputs and status events.
     title : str
         Retained conversation title.
+    definitions : tuple[ToolDefinition, ...] or None, optional
+        Tool definitions already resolved for the current task.
 
     Returns
     -------
@@ -315,7 +365,7 @@ def build_tools(service: Any, record: RunningTask, title: str) -> list[Tool[Any]
         PydanticAI tool functions for all currently enabled operations.
     """
     tools: list[Tool[Any]] = []
-    for definition in service._tool_dispatcher.definitions():
+    for definition in definitions or service._tool_dispatcher.definitions():
         tools.append(_build_tool(service, record, definition, title))
     return tools
 
@@ -411,16 +461,20 @@ async def run_agent(
     None
     """
     model = ProviderModel(service, record, binding, title)
+    definitions = service._tool_dispatcher.definitions()
     pydantic_agent = Agent(
         model,
         instructions=instructions,
-        tools=build_tools(service, record, title),
+        tools=build_tools(service, record, title, definitions),
         retries=0,
         name="amethyst-agent",
     )
     previous = record.messages[:-1]
     result = await pydantic_agent.run(
-        record.task.request, message_history=to_ai_messages(previous)
+        record.task.request,
+        message_history=to_ai_messages(
+            previous, {definition.name for definition in definitions}
+        ),
     )
     record.messages = from_ai_messages(result.all_messages())
     record.partial_text = ""
