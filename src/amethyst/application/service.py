@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from amethyst.application.budgets import TokenBudget
 from amethyst.application.model_execution import ModelRunner
+from amethyst.application.pydantic_agent import run_agent
 from amethyst.application.state import (
     ProviderBinding as ProviderBinding,
 )
@@ -421,10 +422,7 @@ class AgentService:
             conversation = await self._load_conversation(record)
             instructions = await self._instructions(record)
             await self._save(record, conversation.title)
-            while await self._run_turn(
-                record, binding, instructions, conversation.title
-            ):
-                pass
+            await run_agent(self, record, binding, instructions, conversation.title)
         except asyncio.CancelledError:
             outcome = TaskStatus.CANCELLED
         except ContractError as error:
@@ -469,67 +467,6 @@ class AgentService:
         ]
         record.messages.append(Message("user", record.task.request))
         return conversation
-
-    async def _run_turn(
-        self,
-        record: RunningTask,
-        binding: ProviderBinding,
-        instructions: str,
-        title: str,
-    ) -> bool:
-        """Generate one response and execute only its validated, planned calls.
-
-        Parameters
-        ----------
-        record : RunningTask
-            Current conversation and task state.
-        binding : ProviderBinding
-            Selected provider and model.
-        instructions : str
-            Selected system and skill instructions.
-        title : str
-            Conversation title retained between turns.
-
-        Returns
-        -------
-        bool
-            Whether tool results require another model turn.
-        """
-        record.deadline.remaining()
-        text, completed = await self._model_runner.generate(
-            record, binding, instructions
-        )
-        record.messages.append(
-            Message("assistant", text, tool_calls=completed.tool_calls)
-        )
-        record.partial_text = ""
-        await self._save(record, title)
-        if not completed.tool_calls:
-            return False
-        if not text.strip():
-            raise ContractError(
-                ErrorCode.INVALID_INPUT,
-                "A visible plan is required before tool execution.",
-            )
-        ids = [call.id for call in completed.tool_calls]
-        if len(ids) != len(set(ids)):
-            raise ContractError(
-                ErrorCode.INVALID_INPUT,
-                "Model returned duplicate tool call IDs.",
-            )
-        for call in completed.tool_calls:
-            result = await self._tool_dispatcher.execute(record, call)
-            await self._emit(record, result)
-            record.messages.append(
-                Message("tool", result.content, tool_call_id=call.id)
-            )
-            await self._save(record, title)
-        await self._state(
-            record,
-            TaskStatus.RUNNING,
-            "Inspecting tool results and validating the outcome.",
-        )
-        return True
 
     async def _finalize(
         self, record: RunningTask, outcome: TaskStatus, failure: TaskFailure | None

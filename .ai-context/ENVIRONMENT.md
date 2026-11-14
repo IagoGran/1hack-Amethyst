@@ -4,6 +4,7 @@
 
 - Approved MVP platforms: Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
 - Deployment: local single-user PySide6 standalone window, packaged with the existing uv wheel backend. Native installers remain `Pending`. See `docs/desktop_integration.md` for launch/configuration.
+- Agent loop: `pydantic-ai-slim` is a runtime dependency. Existing configured model adapters remain in use behind `ProviderModel`; no provider SDK extras are enabled by this dependency.
 - Product commands and project tests: Docker Engine/runc on a local Linux daemon, restricted to a read-only approved workspace, with network disabled by default. The selected profile requires cgroup v2, resource controllers, and built-in seccomp; it remains disabled until host validation. See `docs/sandbox_runtime.md`.
 
 ## Environment Differences

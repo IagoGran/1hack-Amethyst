@@ -2,13 +2,13 @@
 
 ## Backend Stack
 
-Python 3.13+ with standard-library DTOs and async protocols. `keyring` supplies the explicitly selected Linux Secret Service backend; optional connector clients are declared as integration extras. PySide6 supplies the desktop runtime. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
+Python 3.13+ with standard-library DTOs and async protocols. PydanticAI owns agent iteration and tool invocation; `ProviderModel` bridges requests to the existing model-provider port. `keyring` supplies the explicitly selected Linux Secret Service backend; optional connector clients are declared as integration extras. PySide6 supplies the desktop runtime. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
 
 ## Directory Structure
 
 See `docs/code_structure.md` for the repository-wide module map. Keep orchestration, model execution, tool authorization/dispatch, budgets, and timing separate. `adapters/codecs.py` owns record serialization, `serialization.py` owns bounded JSON record encoding, and test-only implementations live in `tests/support/`. Public compatibility exports remain where documented; removed preview paths are intentionally unsupported.
 
-The package is `src/amethyst/`, divided into `application/`, `domain/`, `ports/`, `adapters/`, `security/`, `skills/`, `configuration/`, and `ui/`. Provider/connector adapters and durable repositories are implemented. `application/runtime.py` composes them with the agent and security services for the desktop.
+The package is `src/amethyst/`, divided into `application/`, `domain/`, `ports/`, `adapters/`, `security/`, `skills/`, `configuration/`, and `ui/`. Provider/connector adapters and durable repositories are implemented. `application/pydantic_agent.py` translates message history and exposes registered PydanticAI tools through `ToolDispatcher`; `application/runtime.py` composes providers, tools, and security services for the desktop.
 
 ## Local Development
 
@@ -50,7 +50,7 @@ Tools and workflow: `Pending`.
 
 ## Backend-Specific Conventions
 
-Keep model configuration in `configuration/models.py` and resource-tool configuration in `configuration/tools.py`; share only public metadata and validation helpers. Built-in adapters derive from `ModelAdapter` or `Tool`, respectively, while application injection continues to use structural ports. Register built-ins through the catalog and the matching factory table. Preserve persisted connection kinds and credential references. See `docs/integration_architecture.md` before adding an integration.
+Keep model configuration in `configuration/models.py` and resource-tool configuration in `configuration/tools.py`; share only public metadata and validation helpers. Built-in adapters derive from `ModelAdapter` or `Tool`, respectively, while application injection continues to use structural ports. PydanticAI owns iterative tool orchestration; registered callbacks must execute through `ToolDispatcher` and may not bypass permission, approval, timeout, result, or redaction boundaries. Register built-ins through the catalog and the matching factory table. Preserve persisted connection kinds and credential references. See `docs/integration_architecture.md` before adding an integration.
 
 See `.ai-context/CONVENTIONS.md` and `.ai-context/TESTING.md`.
 

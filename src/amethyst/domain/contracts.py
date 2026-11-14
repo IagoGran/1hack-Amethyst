@@ -33,10 +33,12 @@ class ErrorCode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Usage:
-    """Total input/output tokens for one attempt, including unsuccessful attempts."""
+    """Per-request token use and cumulative task budget accounting."""
 
     input_tokens: int = 0
     output_tokens: int = 0
+    task_total_tokens: int = 0
+    task_remaining_tokens: int = 0
 
 
 class ContractError(Exception):

@@ -103,7 +103,12 @@ class TokenBudget:
                 ErrorCode.INVALID_INPUT, "Provider returned invalid usage."
             )
         self.used += usage.input_tokens + usage.output_tokens
-        return usage
+        return Usage(
+            usage.input_tokens,
+            usage.output_tokens,
+            self.used,
+            max(0, self.limit - self.used),
+        )
 
     def increase(self, tokens: int) -> None:
         """Apply an explicitly requested positive token budget increase.

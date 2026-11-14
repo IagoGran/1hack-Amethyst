@@ -7,7 +7,7 @@ The product uses a standalone local PySide6 desktop and an in-process agent that
 ## Main Components
 
 - Interface: `ui/desktop.py` connects the existing sidebar and transcript widgets to real services. Pages provide chat/model selection, connections, numeric limits, skills, permissions, diagnostics, and task details. History supports viewing/resumption/deletion. Exact-action/diff review, cancellation, token increases, and revocation are trusted UI controls. Conversation components live in `ui/conversation_page.py`, `message_card.py`, and `composer.py`; permissions/diagnostics have a dedicated page. Preview entry points have been removed.
-- Application/agent: `src/amethyst/application/`; `AgentService` implements task/event orchestration, context/skill application, tool selection, approval waits, cancellation, budgets, deadlines, and bounded retry/result handling through injected ports.
+- Application/agent: `src/amethyst/application/`; `AgentService` handles task/event orchestration, context/skill application, cancellation, budgets, deadlines, and bounded retries. PydanticAI `Agent` owns the iterative model/tool loop through `application/pydantic_agent.py`; its model bridge delegates each request to the existing provider port and `ModelRunner`, while registered tool functions delegate to `ToolDispatcher` for authorization, approval, limits, and result handling.
 - Domain: `src/amethyst/domain/`; contains task states and shared request/result/event values in `contracts.py`.
 - Contracts: `src/amethyst/ports/`; includes async application, model, tool/health, approval, repository, credential, and sandbox protocols. See `docs/s0_contract_baseline.md` for semantics and review status.
 - Adapters: `src/amethyst/adapters/`; stdlib HTTP streaming adapters for OpenAI, Gemini, DeepSeek, and Ollama; SQLite read-only SQL; Brave Search; and Qdrant, Milvus, and Chroma vector adapters. PostgreSQL uses optional psycopg 3. External vector adapters use optional vendor clients. Contract tests are in `tests/unit/test_integrations.py`. Runtime/live-service acceptance remains pending.
@@ -20,7 +20,7 @@ The product uses a standalone local PySide6 desktop and an in-process agent that
 
 ## Data Flow
 
-The desktop submits a task to its persistent worker loop. `DesktopRuntime` resolves the selected model and enabled connectors, assigning distinct connector aliases and normalizing Brave/vector list results into bounded retrieval chunks. `AgentService` reloads retained messages, applies selected skills, plans actions, and emits sequenced events. Qt renders text, results, sources, task state, and exact approval proposals; trusted decisions return to the same worker loop. Task-budget exhaustion waits for an explicit increase. Shutdown awaits cancellation/cleanup before closing the worker. Headless desktop-to-adapter checks are in `tests/integration/test_desktop.py`; application-to-sandbox checks are in `test_agent_sandbox.py`. Live-service, real-container, visible desktop, and performance acceptance remain `Pending`.
+The desktop submits a task to its persistent worker loop. `DesktopRuntime` resolves the selected model and enabled connectors, assigning distinct connector aliases and normalizing Brave/vector list results into bounded retrieval chunks. `AgentService` reloads retained messages, applies selected skills, and starts PydanticAI's iterative `Agent` loop. `ProviderModel` bridges each PydanticAI model request to the existing provider protocol and bounded streaming `ModelRunner`; PydanticAI calls the registered tools, whose functions pass through `ToolDispatcher` before execution. Qt renders text, token use/remaining budget, results, sources, task state, and exact approval proposals; trusted decisions return to the same worker loop. Task-budget exhaustion waits for an explicit increase. Shutdown awaits cancellation/cleanup before closing the worker. Headless desktop-to-adapter checks are in `tests/integration/test_desktop.py`; application-to-sandbox checks are in `test_agent_sandbox.py`. Live-service, real-container, visible desktop, and performance acceptance remain `Pending`.
 
 ## External Integrations
 
@@ -33,6 +33,7 @@ The desktop submits a task to its persistent worker loop. `DesktopRuntime` resol
 ## Key Architectural Decisions
 
 - Keep modular interfaces for providers, connectors, and skills (NFR-11).
+- Use PydanticAI `Agent` for the iterative tool loop; retain Amethyst provider, budget, permission, approval, and connector boundaries through explicit bridges.
 - Separate permission checks from tool execution.
 - Use a local standalone desktop deployment; server/hybrid deployment and host-local command execution are outside the approved initial scope.
 - Bind edit approval to the reviewed diff and invalidate it when the proposal or relevant file state changes. Action/batch approval expires after execution or task completion; session read grants expire on app exit.
