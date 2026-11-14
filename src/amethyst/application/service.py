@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import traceback
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from uuid import uuid4
@@ -22,6 +23,7 @@ from amethyst.application.tool_dispatch import ToolDispatcher
 from amethyst.configuration.limits import Limits
 from amethyst.domain.contracts import (
     ApprovalRequest,
+    ActionRecord,
     ContractError,
     Conversation,
     ErrorCode,
@@ -489,12 +491,17 @@ class AgentService:
             outcome = TaskStatus.CANCELLED
         except ContractError as error:
             outcome = TaskStatus.FAILED
-            failure = TaskFailure(error.code, self.redactor.redact(str(error)))
-        except Exception:
+            failure = TaskFailure(
+                error.code,
+                self.redactor.redact(str(error)),
+                _safe_stacktrace(error),
+            )
+        except Exception as error:
             outcome = TaskStatus.FAILED
             failure = TaskFailure(
                 ErrorCode.UNAVAILABLE,
                 "Task failed; inspect connection settings or permissions.",
+                _safe_stacktrace(error),
             )
         finally:
             await self._finalize(record, outcome, failure)
@@ -527,6 +534,11 @@ class AgentService:
             replace(m, content=self.redactor.redact(m.content))
             for m in conversation.messages
         ]
+        record.action_history = list(conversation.action_history)
+        record.undo_records = list(conversation.undo_records)
+        record.workspace_root = conversation.workspace_root
+        record.workspace_read_granted = conversation.workspace_read_granted
+        record.model_connection_id = conversation.model_connection_id
         record.messages.append(Message("user", record.task.request))
         return conversation
 
@@ -604,13 +616,81 @@ class AgentService:
         None
         """
         async with asyncio.timeout(self.limits.tool_seconds):
+            try:
+                stored = await self.conversations.load(record.task.conversation_id)
+            except ContractError as error:
+                if error.code != ErrorCode.NOT_FOUND:
+                    raise
+            else:
+                # A trusted grant revocation can occur while a task is active.
+                record.workspace_root = stored.workspace_root
+                record.workspace_read_granted = stored.workspace_read_granted
+                record.model_connection_id = stored.model_connection_id
             await self.conversations.save(
                 Conversation(
                     record.task.conversation_id,
                     self.redactor.redact(title),
                     tuple(record.messages),
+                    record.workspace_root,
+                    record.workspace_read_granted,
+                    tuple(record.action_history),
+                    tuple(record.undo_records),
+                    record.model_connection_id,
                 )
             )
+
+    async def record_action(
+        self,
+        record: RunningTask,
+        tool: str,
+        status: str,
+        summary: str,
+        file_paths: tuple[str, ...] = (),
+    ) -> None:
+        """Append minimal action metadata without arguments or result bodies.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local action history.
+        tool : str
+            Tool name invoked by the model.
+        status : str
+            Safe action outcome label.
+        summary : str
+            Brief operation description.
+        file_paths : tuple[str, ...]
+            Workspace-relative paths relevant to the operation.
+
+        Returns
+        -------
+        None
+        """
+        record.action_history.append(
+            ActionRecord(
+                tool=tool,
+                status=status,
+                summary=self.redactor.redact(summary),
+                file_paths=tuple(self.redactor.redact(path) for path in file_paths),
+            )
+        )
+        await self._emit(record, record.action_history[-1])
+
+    def revoke_conversation_workspace(self, conversation_id: str) -> None:
+        """Apply a trusted workspace revocation to any active task snapshot.
+
+        Parameters
+        ----------
+        conversation_id : str
+            Conversation whose read grant was revoked by the user.
+
+        Returns
+        -------
+        None
+        """
+        for record in self._tasks.values():
+            if record.task.conversation_id == conversation_id:
+                record.workspace_read_granted = False
 
     async def _instructions(self, record: RunningTask) -> str:
         """Combine system instructions with enabled explicit or matching skills.
@@ -665,3 +745,24 @@ class AgentService:
             + tool_examples
             + ("\nSelected skills:\n" + "\n".join(selected) if selected else "")
         )
+
+
+def _safe_stacktrace(error: Exception) -> tuple[str, ...]:
+    """Return frame locations without source lines or exception arguments.
+
+    Parameters
+    ----------
+    error : Exception
+        Failure with a Python traceback.
+
+    Returns
+    -------
+    tuple of str
+        Bounded module locations for an expandable local error view.
+    """
+    frames = traceback.extract_tb(error.__traceback__)[-12:]
+    return tuple(
+        f"{frame.filename.replace(chr(92), '/').rsplit('/', 1)[-1]}:"
+        f"{frame.lineno} in {frame.name}"
+        for frame in frames
+    )

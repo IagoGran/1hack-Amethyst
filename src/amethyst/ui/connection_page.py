@@ -1,11 +1,14 @@
 """Separate model and tool settings built on a shared connection editor."""
 
+import re
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -56,6 +59,7 @@ class ConnectionEditor(QWidget):
         layout.addWidget(self.items)
         form = QFormLayout()
         self.identifier = QLineEdit()
+        self.identifier.setAccessibleName("Connection name")
         self.kind = QComboBox()
         self.kind.addItems(
             [
@@ -74,6 +78,9 @@ class ConnectionEditor(QWidget):
         form.addRow("Type", self.kind)
         form.addRow(self.enabled)
         self.fields: dict[str, QLineEdit] = {}
+        self.identifier.textChanged.connect(
+            lambda _value: self._clear_invalid(self.identifier)
+        )
         keys = dict.fromkeys(
             key
             for kind, spec in CONNECTION_SPECS.items()
@@ -83,8 +90,12 @@ class ConnectionEditor(QWidget):
         for key in keys:
             field = QLineEdit()
             field.setAccessibleName(key.replace("_", " "))
+            field.textChanged.connect(
+                lambda _value, target=field: self._clear_invalid(target)
+            )
             self.fields[key] = field
-            form.addRow(key.replace("_", " ").title(), field)
+            label = QLabel(key.replace("_", " ").title())
+            form.addRow(label, field)
         form.addRow("API key / password", self.secret)
         self.form = form
         layout.addLayout(form)
@@ -197,19 +208,26 @@ class ConnectionEditor(QWidget):
         """
         identifier = self.identifier.text().strip()
         if not identifier:
-            self.notice.setText("Enter a connection name.")
+            self._mark_invalid(self.identifier, "Enter a connection name.")
             return
         options: dict[str, JsonValue] = {}
         try:
+            failed_key = ""
             for key in FIELDS[self.kind.currentText()]:
                 value = self.fields[key].text().strip()
                 if value:
+                    failed_key = key
                     options[key] = int(value) if key in NUMERIC_FIELDS else value
         except ValueError:
-            self.notice.setText("Enter a whole number for numeric settings.")
+            self._mark_invalid(
+                self.fields[failed_key], "Enter a whole number for this setting."
+            )
             return
         if identifier in self._all_records and identifier not in self.records:
-            self.notice.setText("This name belongs to the other connection category.")
+            self._mark_invalid(
+                self.identifier,
+                "This name belongs to the other connection category.",
+            )
             return
         previous = self.records.get(identifier)
         reference = previous.credential_ref if previous else None
@@ -222,6 +240,69 @@ class ConnectionEditor(QWidget):
         )
         self.command.emit("save_connection", (record, self.secret.text()))
         self.secret.clear()
+
+    def _mark_invalid(self, field: QLineEdit, message: str) -> None:
+        """Highlight the invalid editor and provide its accessible explanation.
+
+        Parameters
+        ----------
+        field : QLineEdit
+            Form control that needs correction.
+        message : str
+            Concise validation explanation.
+
+        Returns
+        -------
+        None
+        """
+        field.setStyleSheet("border: 1px solid #e26b7a;")
+        field.setToolTip(message)
+        field.setAccessibleDescription(message)
+        self.notice.setText(message)
+
+    def _clear_invalid(self, field: QLineEdit) -> None:
+        """Clear the invalid style after the user edits the affected control.
+
+        Parameters
+        ----------
+        field : QLineEdit
+            Edited form control.
+
+        Returns
+        -------
+        None
+        """
+        field.setStyleSheet("")
+        field.setToolTip("")
+        field.setAccessibleDescription("")
+
+    def report_error(self, message: str) -> None:
+        """Map a backend validation error to its matching visible form field.
+
+        Parameters
+        ----------
+        message : str
+            Safe validation message returned by the application boundary.
+
+        Returns
+        -------
+        None
+        """
+        match = re.search(r"setting '([^']+)'", message, re.IGNORECASE)
+        key = match.group(1) if match else ""
+        lowered = message.lower()
+        if not key and "model id" in lowered:
+            key = "model_id"
+        if not key and "context size" in lowered:
+            key = "context_tokens"
+        if not key and "endpoint" in lowered:
+            key = "endpoint"
+        if key in self.fields:
+            self._mark_invalid(self.fields[key], message)
+        elif "credential" in lowered or "api key" in lowered:
+            self._mark_invalid(self.secret, message)
+        else:
+            self.notice.setText(message)
 
     def test(self) -> None:
         """Test the saved connection selected in the form.
@@ -266,6 +347,31 @@ class ModelConnectionPage(ConnectionEditor):
         None
         """
         super().__init__(ConnectionCategory.MODEL)
+        row = QHBoxLayout()
+        self.list_ollama = QPushButton("Refresh local Ollama models")
+        self.list_ollama.clicked.connect(
+            lambda: self.command.emit("ollama_list", None)
+        )
+        self.pull_ollama = QPushButton("Pull model…")
+        self.pull_ollama.clicked.connect(self._pull_ollama)
+        row.addWidget(self.list_ollama)
+        row.addWidget(self.pull_ollama)
+        self.layout().addItem(row)
+
+    def _pull_ollama(self) -> None:
+        """Ask for a model name and start a local Ollama pull.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        name, accepted = QInputDialog.getText(self, "Pull Ollama model", "Model name")
+        if accepted and name.strip():
+            self.command.emit("ollama_pull", name.strip())
 
 
 class ToolConnectionPage(ConnectionEditor):
@@ -343,6 +449,20 @@ class ConnectionPage(QTabWidget):
         if isinstance(sender, ConnectionEditor):
             self._command_page = sender
         self.command.emit(action, payload)
+
+    def report_error(self, message: str) -> None:
+        """Display asynchronous configuration feedback on its originating form.
+
+        Parameters
+        ----------
+        message : str
+            Safe backend message.
+
+        Returns
+        -------
+        None
+        """
+        self._command_page.report_error(message)
 
     def refresh(self, records: tuple[Connection, ...]) -> None:
         """Refresh both category lists without replacing unfinished forms.

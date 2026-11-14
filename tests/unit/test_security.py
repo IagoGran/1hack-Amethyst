@@ -306,6 +306,7 @@ def test_workspace_edit_create_delete_and_expired_diff_cleanup(tmp_path: Path) -
         file.write_text("old\n")
         file.chmod(0o755)
         edit = workspace.propose("code.py", "new\n", CTX)
+        assert edit.previous_content == "old\n"
         assert "-old" in edit.action.changes[0].diff
         assert "+new" in edit.action.changes[0].diff
         assert workspace.read("code.py", CTX) == "old\n"
@@ -318,6 +319,7 @@ def test_workspace_edit_create_delete_and_expired_diff_cleanup(tmp_path: Path) -
         with pytest.raises(ContractError):
             workspace.propose("code.py", "new\n", CTX)
         create = workspace.propose("empty", "", CTX)
+        assert create.previous_content is None
         await approve(engine, (create.action,), "create")
         await workspace.apply(create, "create", CTX)
         delete = workspace.propose("empty", None, CTX)

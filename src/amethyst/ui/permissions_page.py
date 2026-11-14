@@ -10,7 +10,6 @@ class PermissionsPage(QWidget):
     """Present grants and approvals without deciding effective authorization."""
 
     command = Signal(str, object)
-    workspace_requested = Signal()
     refresh_requested = Signal()
 
     def __init__(self) -> None:
@@ -26,14 +25,10 @@ class PermissionsPage(QWidget):
         """
         super().__init__()
         layout = QVBoxLayout(self)
-        self.notice = QLabel("Workspace access requires a session grant.")
+        self.notice = QLabel("Workspace access is managed separately for each chat.")
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
-        for title, handler in (
-            ("Choose workspace", self.workspace_requested.emit),
-            ("Allow reads in selected workspace for this session", self._grant),
-            ("Refresh permissions and logs", self.refresh_requested.emit),
-        ):
+        for title, handler in (("Refresh permissions and logs", self.refresh_requested.emit),):
             button = QPushButton(title)
             button.clicked.connect(handler)
             layout.addWidget(button)
@@ -91,23 +86,9 @@ class PermissionsPage(QWidget):
         )
         self.notice.setText(
             f"Credentials: {storage}. "
-            f"Workspace: {snapshot['workspace'] or 'none selected'}. "
             f"Sandbox: {'enabled' if snapshot['sandbox_enabled'] else 'disabled'}. "
-            "Workspace grants expire on exit."
+            "Workspace grants are saved with their chat and can be revoked there."
         )
-
-    def _grant(self) -> None:
-        """Request a read grant only after the user invokes its explicit control.
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        None
-        """
-        self.command.emit("grant_workspace", None)
 
     def _revoke(self) -> None:
         """Request revocation of the selected grant or action approval.

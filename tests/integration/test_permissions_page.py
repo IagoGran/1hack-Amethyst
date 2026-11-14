@@ -41,7 +41,6 @@ def test_permission_controls_preserve_exact_commands(qt_app: QApplication) -> No
     )
     buttons = {button.text(): button for button in page.findChildren(QPushButton)}
     try:
-        buttons["Allow reads in selected workspace for this session"].click()
         page.permissions.setCurrentRow(0)
         buttons["Revoke selected permission / approval"].click()
         page.permissions.setCurrentRow(1)
@@ -50,7 +49,6 @@ def test_permission_controls_preserve_exact_commands(qt_app: QApplication) -> No
         buttons["Save selected log permanently"].click()
         buttons["Delete selected log"].click()
         assert commands == [
-            ("grant_workspace", None),
             ("revoke_grant", grant.id),
             ("revoke_approval", "review"),
             ("save_log", "log-id"),

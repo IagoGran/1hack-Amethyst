@@ -7,6 +7,7 @@ Serialization and durable storage formats are deliberately not selected here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -89,6 +90,9 @@ class Message:
     content: str
     tool_call_id: str | None = None
     tool_calls: tuple[ToolCall, ...] = ()
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,10 +257,42 @@ class TaskStateChanged:
 class TaskFailure:
     code: ErrorCode
     message: str
+    stacktrace: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ActionRecord:
+    """Minimal persistent metadata for one tool action."""
+
+    tool: str
+    status: str
+    summary: str
+    file_paths: tuple[str, ...] = ()
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class UndoRecord:
+    """Locally retained prior file content needed to reverse an approved edit."""
+
+    id: str
+    path: str
+    previous_content: str | None
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 type TaskEventPayload = (
-    TaskStateChanged | TextDelta | ToolResult | ApprovalRequest | Usage | TaskFailure
+    TaskStateChanged
+    | TextDelta
+    | ToolResult
+    | ApprovalRequest
+    | Usage
+    | TaskFailure
+    | ActionRecord
 )
 
 
@@ -274,6 +310,11 @@ class Conversation:
     id: str
     title: str
     messages: tuple[Message, ...] = ()
+    workspace_root: str | None = None
+    workspace_read_granted: bool = False
+    action_history: tuple[ActionRecord, ...] = ()
+    undo_records: tuple[UndoRecord, ...] = ()
+    model_connection_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

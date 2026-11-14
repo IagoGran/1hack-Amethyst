@@ -33,6 +33,8 @@ Add or update tests for behavior changes and important permission, tool executio
 
 `tests/integration/test_connection_page.py` verifies model/tool tab isolation, saved setting loading, typed options, preserved credential references, separate replacement secrets, and cross-category name protection. Model/tool adapter, runtime, and desktop regressions remain in their existing suites. This refactor preserves the storage schema and does not establish live-service or visible desktop acceptance.
 
+`tests/unit/test_local_features.py` covers loopback-only Ollama management, bounded read-only Git branch refs, and best-effort telemetry ranges. `test_integrations.py` covers backward-compatible conversation serialization for timestamps, per-chat workspace grants, action metadata, undo snapshots, and the selected model. These focused checks have not been run in the current Windows execution environment because `uv.exe` is inaccessible and no Python interpreter is installed; Linux and visible Ubuntu/WSL2 acceptance remain Pending.
+
 `tests/unit/test_connection_settings.py` covers explicit model context sizes for all four providers, rejects invalid sizes, and preserves nested inline-secret rejection. Headless desktop workflows configure an explicit 8K Ollama context with 4K input and 2K output limits, covering the settings-to-adapter path that previously misclassified `context_tokens` as a credential.
 
 Requirements section 5.8 defines the release gate; implementation and results remain `Pending`.

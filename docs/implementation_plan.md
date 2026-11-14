@@ -116,7 +116,7 @@ Branch: `feature/mvp-agent-security`
 
 - [x] Define permission scopes for tools and local resources with grant, inspect, and revoke operations.
 - [x] Scope protected approval to one action or explicitly enumerated action/diff batch.
-- [x] Expire action approvals after use or task completion; expire read-only session grants on app exit.
+- [x] Expire action approvals after use or task completion; expire external read-only grants on app exit. Chat-scoped workspace grants are an approved desktop extension and persist with the chat.
 - [x] Enforce high-impact approval for destructive actions. Database writes are rejected because enabled SQL tools are read-only.
 - [x] Block protected execution when permission is absent, expired, or revoked, including unexecuted batch actions.
 - [x] Add tests for approval denial, expiry, revocation, batch scope, and changed-diff invalidation.
@@ -144,9 +144,9 @@ Branch: `feature/mvp-agent-security`
 
 - [x] Integrate the Linux Secret Service credential store; use memory-only credentials when unavailable and never persist plaintext fallback. WSL credential-store availability still needs platform validation.
 - [x] Redact registered secrets and common credential patterns from streamed text, tool results, and errors; restrict normal diagnostics to operational metadata.
-- [x] Remove task-owned temporary directories at task end; persisted conversation messages follow conversation retention. The current application creates no separate durable retrieval/workspace copies.
+- [x] Remove task-owned temporary directories at task end; persisted conversation data follows conversation retention. User-approved undo snapshots are an exception: prior text contents persist locally per chat until chat deletion or workspace-root change.
 - [x] Expire unsaved diagnostic logs after seven days and support explicit permanent saving/deletion.
-- [x] Keep diagnostic logs separate from the repository-backed conversation; ordinary logs do not implement later FR-31 action history.
+- [x] Keep diagnostic logs separate from the repository-backed conversation; the user-approved FR-31 action history is stored as minimal conversation metadata.
 - [x] Add deterministic tests for secret redaction, memory fallback, expiry, explicit log saving, and temporary-data cleanup.
 
 ### B7. Automated critical paths — NFR-12, section 5.8

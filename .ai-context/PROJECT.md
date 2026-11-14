@@ -32,13 +32,15 @@
 - Read-only SQLite 3 and PostgreSQL 16+; locally hosted Qdrant, Milvus, and ChromaDB; Brave Search API.
 - MVP container-sandboxed commands and tests, restricted to the approved workspace, with network access disabled by default.
 - MVP conversation viewing, resumption, and deletion; conversations persist until deleted.
+- One workspace root per conversation, with a revocable read grant retained by that chat.
+- Conversation timestamps, action history, reviewed file undo, local resource monitoring, read-only branch metadata, and local Ollama model listing/pulls.
 
 These approved choices constrain the scope above; unrelated recommendations have not been approved implicitly.
 
 ### Excluded
 
 - Server/hybrid application deployment and host-local command execution are outside the approved initial scope.
-- Richer action history, extensible connector registration, broader model-parameter controls, and portable configuration remain later-release recommendations.
+- Extensible connector registration, broader model-parameter controls, and portable configuration remain later-release recommendations.
 - Other exclusions: `Pending`.
 
 ## Users and Stakeholders
@@ -57,7 +59,7 @@ These approved choices constrain the scope above; unrelated recommendations have
 
 ## Project Status
 
-Workstreams A/B/C are composed in the normal PySide6 desktop launcher: chat and task controls use the real agent, durable SQLite history/skills/connections, native PydanticAI model providers, configured tool adapters, reviewed approvals, session permissions, OS credentials with memory-only fallback, diagnostic retention, and persistent numeric limits. PydanticAI owns the iterative agent/tool cycle through native OpenAI, Gemini, DeepSeek, and Ollama models; protected tools still pass through application dispatch, and token events report task use and remaining budget. A persistent worker event loop owns all async application state. The standalone previews and their fake/sample UI modules have been removed; deterministic doubles live under `tests/support/`. See `docs/desktop_integration.md` for launch, configuration, boundaries, and validation. The model-facing tool inventory is maintained in `docs/tool_inventory.md`. The Docker profile remains disabled unless explicitly configured after host validation. Headless desktop tests use real adapters against deterministic local HTTP fixtures. Live-service checks, real-container acceptance, visible desktop/platform acceptance, performance measurements, natural-language query embedding, encryption/backup, native installers, contributor acknowledgment, hosted PR review, and overall MVP acceptance remain `Pending`.
+Workstreams A/B/C are composed in the normal PySide6 desktop launcher: chat and task controls use the real agent, durable SQLite history/skills/connections, native PydanticAI model providers, configured tool adapters, reviewed approvals, chat-scoped workspace roots and persistent revocable read grants, OS credentials with memory-only fallback, diagnostic retention, and persistent numeric limits. Conversation history includes UTC message timestamps, minimal action metadata, and explicitly retained local undo snapshots for reviewed edits. The desktop includes best-effort CPU/RAM/GPU telemetry, local-only Ollama model listing/pulls, and a read-only Git branch metadata view. PydanticAI owns the iterative agent/tool cycle through native OpenAI, Gemini, DeepSeek, and Ollama models; protected tools still pass through application dispatch, and token events report task use and remaining budget. A persistent worker event loop owns all async application state. The standalone previews and their fake/sample UI modules have been removed; deterministic doubles live under `tests/support/`. See `docs/desktop_integration.md` for launch, configuration, boundaries, and validation. The model-facing tool inventory is maintained in `docs/tool_inventory.md`. The Docker profile remains disabled unless explicitly configured after host validation. Headless desktop tests use real adapters against deterministic local HTTP fixtures. Visible desktop/platform acceptance, live-service checks, real-container acceptance, performance measurements, natural-language query embedding, encryption/backup, native installers, contributor acknowledgment, hosted PR review, and overall MVP acceptance remain `Pending`.
 
 ## Related Repositories and Services
 

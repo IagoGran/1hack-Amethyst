@@ -17,8 +17,11 @@ The application has one supported desktop entry point: `uv run 1hack-amethyst`, 
 | `adapters/models/` | Shared `ModelAdapter` setup, stream deadlines and function declarations; chat-completion and Gemini protocols in separate modules. `providers.py` retains the public provider exports. |
 | `adapters/tools/` | Common `Tool` execution role and retrieval result handling; `ReadOnlySQLTool` shares SQL admission/schema/result behavior while each driver retains database-enforced protection. Vector adapters retain their family-specific shared implementation. |
 | `adapters/persistence.py`, `codecs.py` | Generic durable SQLite repositories and domain-record serialization. Saved connection/conversation schemas remain compatible. |
+| `adapters/models/ollama_manager.py` | Local-only Ollama model listing and streamed pull status. |
 | `adapters/http.py`, `serialization.py` | Shared retry-header parsing and linear, UTF-8-aware JSON record bounding. Each examined record is encoded once; callers own record limits and attribution. |
 | `security/` | Separate permission/approval policy, approval lookup, credential storage, redaction, SQL admission, reviewed workspace edits, diagnostics, and container policy/transport. |
+| `security/git_metadata.py` | Bounded read-only branch-ref listing from an authorized workspace, without invoking Git. |
+| `application/resource_monitor.py`, `ui/resource_page.py`, `ui/git_page.py` | Best-effort local resource metrics and read-only branch visualization. |
 | `skills/selection.py` | Explicit and literal-condition skill selection, independent of model generation. |
 | `ui/` | Desktop coordination, persistent worker, conversation/message components, composer, connection editors, permissions/diagnostics page, skills, limits, sidebar, and theme. |
 | `tests/support/` | Deterministic fake services, disabled/deny-all adapters, and vendor fixtures. These are used by tests and are excluded from the application package. |
@@ -29,7 +32,7 @@ Use inheritance for stable shared roles: `ModelAdapter`, `Tool`, `ReadOnlySQLToo
 
 Do not copy schemas, terminal-state sets, codec logic, stream deadlines, source alignment, or byte-truncation loops into new integrations. Extend the existing implementation appropriate to the responsibility. See [model and tool architecture](integration_architecture.md) for the built-in integration workflow. Dynamic plugin registration remains Pending.
 
-Stored connection kinds, credential references, SQLite schemas, task/event contracts, authorization lifetimes, default limits, and the container-only execution boundary are preserved. Selected public imports remain available where implementations moved. Test-only implementations now import from `tests.support`; preview import paths are intentionally removed.
+Stored connection kinds, credential references, the version-1 SQLite table schema, task/event contracts, default limits, and the container-only execution boundary are preserved. Conversation JSON payloads remain backward compatible and now optionally include message timestamps, chat-scoped workspace metadata/grants, action history, model-switch markers, and undo snapshots. Undo snapshots contain prior file text and remain unencrypted until chat deletion or workspace-root change. Workspace grants persist with their chat; external connector grants remain session scoped. Selected public imports remain available where implementations moved. Test-only implementations now import from `tests.support`; preview import paths are intentionally removed.
 
 ## Removing unused code
 

@@ -332,6 +332,8 @@ class NavigationSidebar(QWidget):
             ("Skills", "✧"),
             ("Connections", "⚙"),
             ("Permissions", "⬡"),
+            ("Resources", "▥"),
+            ("Git branches", "⑂"),
             ("Task details", "≡"),
         )
         for page, icon in items:

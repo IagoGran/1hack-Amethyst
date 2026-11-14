@@ -3,7 +3,8 @@
 This inventory distinguishes code that implements a tool, connection kinds that
 can be constructed by configuration, and tools available in a particular task.
 Runtime availability depends on the selected session, enabled connection,
-optional adapter dependencies, workspace selection, and sandbox host validation.
+optional adapter dependencies, the active chat's workspace selection/read grant,
+and sandbox host validation.
 
 ## Configured connector tools
 
@@ -27,8 +28,8 @@ selected. They are registered per task and all calls still pass through
 
 | Internal name | Function and implementation | Arguments | Access and authorization | Status / agent availability |
 |---|---|---|---|---|
-| `workspace.list` | List bounded directory entries; `Workspace.list` in `security/workspace.py` | `path: string` (`.` for workspace root) | Read-only; requires a read grant for the listed directory; does not follow symlinks and omits `.git` | Implemented; available only after workspace selection |
-| `workspace.read` | Read permitted UTF-8 files; `Workspace.read` in `security/workspace.py` | `path: string` | Read-only; explicit workspace read grant or one-action approval; path and file safety checks | Implemented; available only after workspace selection; task registration does not itself grant permission |
+| `workspace.list` | List bounded directory entries; `Workspace.list` in `security/workspace.py` | `path: string` (`.` for workspace root) | Read-only; requires the active chat's read grant for the listed directory; does not follow symlinks and omits `.git` | Implemented; available only after workspace selection and chat-scoped read permission |
+| `workspace.read` | Read permitted UTF-8 files; `Workspace.read` in `security/workspace.py` | `path: string` | Read-only; explicit chat-scoped workspace read grant; path and file safety checks | Implemented; grant restores with its chat; task registration does not itself grant permission |
 | `workspace.edit` | Propose and apply a reviewed diff; `Workspace.propose/apply` in `security/workspace.py` | `path: string`, `content: string \| null` | Modifies files; explicit approval bound to the exact diff, missing parent directories, and current file state | Implemented; available only after workspace selection and only executes after approval; missing parent directories are created as part of the approved edit |
 | `workspace.mkdir` | Create a directory tree; `Workspace.propose_directory/create_directory` in `security/workspace.py` | `path: string` | Modifies workspace; exact approval lists every missing parent and target directory | Implemented; available only after workspace selection and only executes after approval |
 | `sandbox.run` | Run a command in the container; `DockerSandbox.run` in `security/sandbox.py` | `argv: string[]`, optional `working_directory: string`, optional `network_enabled: boolean` | Command execution; explicit approval bound to the exact request; container-only, read-only workspace, network denied by default | Implemented but runtime disabled until image/host validation; available only when the validated sandbox is configured and enabled |

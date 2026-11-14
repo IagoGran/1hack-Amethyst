@@ -1,15 +1,18 @@
 """Serialization for durable conversation, skill, and connection records."""
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from amethyst.domain.contracts import (
+    ActionRecord,
     Connection,
     Conversation,
     JsonValue,
     Message,
     Skill,
     ToolCall,
+    UndoRecord,
 )
 
 
@@ -31,6 +34,9 @@ def decode_message(data: dict[str, Any]) -> Message:
         content=data["content"],
         tool_call_id=data.get("tool_call_id"),
         tool_calls=tuple(ToolCall(**call) for call in data.get("tool_calls", [])),
+        created_at=str(
+            data.get("created_at") or datetime.now(timezone.utc).isoformat()
+        ),
     )
 
 
@@ -51,6 +57,11 @@ def _encode_conversation(value: Conversation) -> dict[str, object]:
         "id": value.id,
         "title": value.title,
         "messages": [encode_record(message) for message in value.messages],
+        "workspace_root": value.workspace_root,
+        "workspace_read_granted": value.workspace_read_granted,
+        "action_history": [encode_record(action) for action in value.action_history],
+        "undo_records": [encode_record(item) for item in value.undo_records],
+        "model_connection_id": value.model_connection_id,
     }
 
 
@@ -76,7 +87,45 @@ def _decode_conversation(data: dict[str, object]) -> Conversation:
     if not isinstance(raw_messages, list):
         raise TypeError("messages must be a list")
     messages = tuple(decode_message(raw) for raw in raw_messages)
-    return Conversation(str(data["id"]), str(data["title"]), messages)
+    raw_actions = data.get("action_history", [])
+    if not isinstance(raw_actions, list):
+        raise TypeError("action_history must be a list")
+    raw_undo = data.get("undo_records", [])
+    if not isinstance(raw_undo, list):
+        raise TypeError("undo_records must be a list")
+    return Conversation(
+        str(data["id"]),
+        str(data["title"]),
+        messages,
+        cast(str | None, data.get("workspace_root")),
+        bool(data.get("workspace_read_granted", False)),
+        tuple(
+            ActionRecord(
+                tool=str(action["tool"]),
+                status=str(action["status"]),
+                summary=str(action["summary"]),
+                file_paths=tuple(str(path) for path in action.get("file_paths", [])),
+                created_at=str(
+                    action.get("created_at")
+                    or datetime.now(timezone.utc).isoformat()
+                ),
+            )
+            for action in raw_actions
+        ),
+        tuple(
+            UndoRecord(
+                id=str(item["id"]),
+                path=str(item["path"]),
+                previous_content=cast(str | None, item.get("previous_content")),
+                created_at=str(
+                    item.get("created_at")
+                    or datetime.now(timezone.utc).isoformat()
+                ),
+            )
+            for item in raw_undo
+        ),
+        cast(str | None, data.get("model_connection_id")),
+    )
 
 
 def _decode_skill(data: dict[str, object]) -> Skill:
@@ -123,7 +172,9 @@ def _decode_connection(data: dict[str, object]) -> Connection:
     )
 
 
-def encode_record(value: Skill | Connection | Message) -> dict[str, object]:
+def encode_record(
+    value: Skill | Connection | Message | ActionRecord | UndoRecord,
+) -> dict[str, object]:
     """Serialize simple saved records using their dataclass field representation.
 
     Parameters

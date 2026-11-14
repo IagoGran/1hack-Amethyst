@@ -1,12 +1,16 @@
 """Compose the desktop's real application, adapters, and session security."""
 
+import asyncio
 import os
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+from amethyst.adapters.models.ollama_manager import list_models, pull_model
 from amethyst.adapters.persistence import SQLiteRepositories, create_sqlite_repositories
 from amethyst.application.connections import ConnectionService
+from amethyst.application.resource_monitor import ResourceMonitor, ResourceSnapshot
 from amethyst.application.service import AgentService
 from amethyst.application.state import ProviderBinding, ToolBinding
 from amethyst.application.tools import NamedTool as NamedTool
@@ -22,8 +26,10 @@ from amethyst.domain.contracts import (
     Connection,
     ContractError,
     ErrorCode,
+    OperationContext,
 )
 from amethyst.security.credentials import OSCredentialStore
+from amethyst.security.git_metadata import GitBranch, list_branches
 from amethyst.security.permissions import ApprovalEngine, PermissionService
 from amethyst.security.redaction import Redactor
 from amethyst.security.retention import DiagnosticStore
@@ -68,6 +74,7 @@ class DesktopRuntime:
         self.repositories = repositories
         self.credentials = credentials
         self.redactor = redactor
+        self.resource_monitor = ResourceMonitor()
         self.connections = ConnectionService(repositories.connections, credentials)
         self.settings_path = repositories.conversations.path.with_suffix(
             ".settings.json"
@@ -151,6 +158,23 @@ class DesktopRuntime:
                 self.agent.permissions.revoke(grant.id)
         self.agent.workspace = workspace
         self.agent.sandbox = sandbox
+
+    def clear_workspace(self) -> None:
+        """Remove the active chat workspace and revoke its read grants.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        for grant in self.agent.permissions.inspect():
+            if grant.tool_name == "workspace.read":
+                self.agent.permissions.revoke(grant.id)
+        self.agent.workspace = None
+        self.agent.sandbox = None
 
     async def save_connection(self, connection: Connection, secret: str = "") -> None:
         """Validate settings and store credentials separately from SQLite.
@@ -240,6 +264,99 @@ class DesktopRuntime:
         """
         await self.agent.close()
         await self.credentials.close()
+
+    async def sample_resources(self) -> ResourceSnapshot:
+        """Collect machine telemetry and optional local Ollama attribution.
+
+        Returns
+        -------
+        ResourceSnapshot
+            Best-effort metrics from the machine and configured local daemon.
+        """
+        connections = await self.repositories.connections.list()
+        ollama = next(
+            (
+                value
+                for value in connections
+                if value.enabled and value.kind == ConnectionKind.OLLAMA.value
+            ),
+            None,
+        )
+        endpoint = None
+        if ollama:
+            value = ollama.options.get("endpoint")
+            endpoint = value if isinstance(value, str) else None
+        return await asyncio.to_thread(self.resource_monitor.sample, endpoint)
+
+    async def list_local_ollama_models(self) -> tuple[str, ...]:
+        """Query installed models from the configured local Ollama endpoint.
+
+        Returns
+        -------
+        tuple of str
+            Names of locally installed models.
+        """
+        endpoint = await self._ollama_endpoint()
+        return await asyncio.to_thread(list_models, endpoint)
+
+    async def pull_local_ollama_model(
+        self, name: str, progress: Callable[[str], None]
+    ) -> None:
+        """Pull a model through the configured local Ollama service.
+
+        Parameters
+        ----------
+        name : str
+            Model identifier selected by the user.
+        progress : Callable or None
+            Safe status callback used to update the desktop.
+
+        Returns
+        -------
+        None
+        """
+        endpoint = await self._ollama_endpoint()
+        await asyncio.to_thread(pull_model, name, endpoint, progress)
+
+    async def _ollama_endpoint(self) -> str | None:
+        """Return the first saved local Ollama endpoint, if configured.
+
+        Returns
+        -------
+        str or None
+            Endpoint value or the local service default.
+        """
+        connections = await self.repositories.connections.list()
+        ollama = next(
+            (value for value in connections if value.kind == ConnectionKind.OLLAMA.value),
+            None,
+        )
+        if ollama is None:
+            return None
+        endpoint = ollama.options.get("endpoint")
+        return endpoint if isinstance(endpoint, str) else None
+
+    def git_branches(self) -> tuple[GitBranch, ...]:
+        """Read branch names only after the active chat grants workspace access.
+
+        Returns
+        -------
+        tuple of GitBranch
+            Bounded local branch metadata without invoking Git commands.
+
+        Raises
+        ------
+        ContractError
+            If the chat has no workspace or its read permission is missing.
+        """
+        workspace = self.agent.workspace
+        if workspace is None:
+            raise ContractError(ErrorCode.NOT_FOUND, "Select a chat workspace first.")
+        context = OperationContext(uuid4().hex, self.agent.session_id)
+        self.agent.permissions.require(
+            context, "workspace.read", str(workspace.root)
+        )
+        return list_branches(workspace.root)
 
     def set_limits(self, limits: Limits) -> None:
         """Persist limits and apply them to subsequent tasks and sandbox calls.

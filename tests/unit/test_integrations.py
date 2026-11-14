@@ -35,6 +35,7 @@ from amethyst.configuration.connections import (
     validate_connection,
 )
 from amethyst.domain.contracts import (
+    ActionRecord,
     Connection,
     ContractError,
     Conversation,
@@ -43,6 +44,7 @@ from amethyst.domain.contracts import (
     ModelCompleted,
     ModelRequest,
     OperationContext,
+    UndoRecord,
     Skill,
     TextDelta,
     ToolCall,
@@ -87,9 +89,17 @@ def test_sqlite_repositories_survive_reopen_and_keep_snapshots(tmp_path) -> None
         """
         database = tmp_path / "amethyst.db"
         conversations = SQLiteConversationRepository(database)
-        await conversations.save(
-            Conversation("c", "Chat", (Message("assistant", "answer"),))
+        original = Conversation(
+            "c",
+            "Chat",
+            (Message("assistant", "answer"),),
+            str(tmp_path),
+            True,
+            (ActionRecord("workspace.read", "completed", "Read README", ("README.md",)),),
+            (UndoRecord("u1", "README.md", "old text\n"),),
+            "ollama-local",
         )
+        await conversations.save(original)
         await SQLiteSkillRepository(database).save(
             Skill("s", "Skill", "Instructions", False)
         )
@@ -98,9 +108,16 @@ def test_sqlite_repositories_survive_reopen_and_keep_snapshots(tmp_path) -> None
         )
 
         reopened = SQLiteConversationRepository(database)
-        assert await reopened.load("c") == Conversation(
-            "c", "Chat", (Message("assistant", "answer"),)
-        )
+        restored = await reopened.load("c")
+        assert restored.id == original.id
+        assert restored.title == original.title
+        assert restored.messages[0].content == "answer"
+        assert restored.messages[0].created_at == original.messages[0].created_at
+        assert restored.workspace_root == str(tmp_path)
+        assert restored.workspace_read_granted is True
+        assert restored.action_history == original.action_history
+        assert restored.undo_records == original.undo_records
+        assert restored.model_connection_id == "ollama-local"
         assert (await SQLiteSkillRepository(database).load("s")).enabled is False
         assert (await SQLiteConnectionRepository(database).load("x")).options == {
             "endpoint": "http://localhost:11434"

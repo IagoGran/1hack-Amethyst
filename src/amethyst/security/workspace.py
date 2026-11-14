@@ -27,6 +27,7 @@ class WorkspaceEdit:
     path: str
     content: str | None
     directories: tuple[str, ...] = ()
+    previous_content: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,7 +506,8 @@ class Workspace:
             (change,),
             high_impact=content is None,
         )
-        return WorkspaceEdit(action, path, content, directories)
+        previous = before if original is not None else None
+        return WorkspaceEdit(action, path, content, directories, previous)
 
     async def apply(
         self, edit: WorkspaceEdit, approval_id: str, context: OperationContext

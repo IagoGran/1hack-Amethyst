@@ -24,6 +24,7 @@ from amethyst.domain.contracts import (
     ToolCall,
     ToolDefinition,
     ToolResult,
+    UndoRecord,
 )
 from amethyst.domain.tasks import TaskStatus
 from amethyst.security.permissions import fingerprint
@@ -138,6 +139,32 @@ class ToolDispatcher:
         return tuple(definitions)
 
     async def execute(self, record: RunningTask, call: ToolCall) -> ToolResult:
+        """Execute one tool while recording outcome metadata only.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local state and action history.
+        call : ToolCall
+            Model-selected operation.
+
+        Returns
+        -------
+        ToolResult
+            Bounded redacted result.
+        """
+        try:
+            result = await self._execute(record, call)
+        except ContractError as error:
+            status = "denied" if error.code == ErrorCode.PERMISSION_DENIED else "failed"
+            await self._record_action(record, call, status)
+            raise
+        except Exception:
+            await self._record_action(record, call, "failed")
+            raise
+        return result
+
+    async def _execute(self, record: RunningTask, call: ToolCall) -> ToolResult:
         """Review protected actions before execution and redact returned data.
 
         Parameters
@@ -199,6 +226,8 @@ class ToolDispatcher:
             raise ContractError(
                 ErrorCode.INVALID_INPUT, "Tool returned an unrelated call ID."
             )
+        status = "approved and completed" if operation.action else "completed"
+        await self._record_action(record, call, status, operation.action)
         return replace(
             result,
             content=self.agent.redactor.redact(result.content),
@@ -212,6 +241,37 @@ class ToolDispatcher:
                 for s in result.sources
             ),
         )
+
+    async def _record_action(
+        self,
+        record: RunningTask,
+        call: ToolCall,
+        status: str,
+        action: ProposedAction | None = None,
+    ) -> None:
+        """Persist only tool identity, safe summary, outcome, and file paths.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task receiving the metadata entry.
+        call : ToolCall
+            Executed operation; arguments are not retained wholesale.
+        status : str
+            Safe outcome label.
+        action : ProposedAction or None
+            Approved proposal metadata, if preparation succeeded.
+
+        Returns
+        -------
+        None
+        """
+        paths = tuple(change.path for change in action.changes) if action else ()
+        path = call.arguments.get("path")
+        if isinstance(path, str) and path not in paths:
+            paths += (path,)
+        summary = action.summary if action else f"{call.name} action"
+        await self.agent.record_action(record, call.name, status, summary, paths)
 
     def prepare(self, record: RunningTask, call: ToolCall) -> PreparedOperation:
         """Select the operation builder without invoking protected actions.
@@ -347,6 +407,10 @@ class ToolDispatcher:
             """
             assert approval_id is not None
             await workspace.apply(edit, approval_id, context)
+            record.undo_records.append(
+                UndoRecord(uuid4().hex, edit.path, edit.previous_content)
+            )
+            await self.agent._save(record, record.task.request[:80])
             return ToolResult(call.id, "Reviewed file change applied.")
 
         return PreparedOperation(edit.action, apply)

@@ -49,9 +49,13 @@ Limits are configurable. Budget exhaustion pauses work until explicitly increase
 - Persist conversations locally until deleted, with MVP viewing, resumption, and deletion.
 - Keep settings and saved skills until deleted.
 - Discard raw retrieved content and copied workspace data after the task unless explicitly saved. Content incorporated into a retained conversation follows conversation retention; project files and source databases are unaffected.
+- The accepted workspace undo feature stores prior text file contents in the conversation's local SQLite payload until that chat is deleted or its workspace root changes. These snapshots are not encrypted.
+- Persist one workspace root and its revocable read grant per conversation. Restore that grant when reopening its chat; changing the root revokes the prior grant. External connector read grants remain session-scoped and expire on app exit.
+- Persist message timestamps, minimal action metadata, model-switch markers, and undo records with each conversation. Action history excludes tool arguments and result bodies.
 - Expire redacted diagnostic logs after seven days. Provide an explicit option to save selected logs permanently until deleted, preserving redaction.
 - Store credentials in the OS credential store. If unavailable, keep them only in memory and request them again after restart. Never fall back to plaintext disk storage.
 - Normal logs contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Keep secrets out of ordinary chat, logs, errors, and configuration exports.
+- Resource telemetry is best effort: Linux procfs supplies CPU/RAM, `nvidia-smi` supplies NVIDIA metrics when available, and a local Ollama API may report loaded models and VRAM. Missing metrics remain unavailable; no GPU control or CO₂ estimate is provided.
 - The internal database uses SQLite at `$XDG_DATA_HOME/amethyst/amethyst.sqlite3`, falling back to `~/.local/share/amethyst/amethyst.sqlite3`. Repository values persist across process restarts. Encryption, backup, migration beyond schema version 1, and cleanup scheduling remain `Pending`. Test-only memory repositories and credentials live under `tests/support/` and do not survive restart. See requirements section 5.7 for acceptance checks.
 
 ## Security Considerations

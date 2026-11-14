@@ -1,7 +1,9 @@
 """Integrated desktop using the real agent, durable history, and safe controls."""
 
+import time
 from uuid import uuid4
 
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -24,6 +27,7 @@ from PySide6.QtWidgets import (
 from amethyst.configuration.catalog import MODEL_KINDS
 from amethyst.domain.contracts import (
     ApprovalRequest,
+    ActionRecord,
     StartTask,
     TaskEvent,
     TaskFailure,
@@ -38,8 +42,10 @@ from amethyst.ui.branding import APP_ICON_PATH
 from amethyst.ui.connection_page import ConnectionPage
 from amethyst.ui.conversation_page import ConversationPage
 from amethyst.ui.desktop_worker import DesktopWorker
+from amethyst.ui.git_page import GitPage
 from amethyst.ui.limits_page import LimitsPage
 from amethyst.ui.permissions_page import PermissionsPage
+from amethyst.ui.resource_page import ResourcePage
 from amethyst.ui.sidebar import NavigationSidebar
 from amethyst.ui.skill_page import SkillPage
 from amethyst.ui.theme import APP_STYLE
@@ -71,12 +77,21 @@ class DesktopWindow(QMainWindow):
         self._approval_active = False
         self.snapshot: dict = {}
         self._limits_loaded = False
+        self._task_started_at: float | None = None
+        self._last_model_id: str | None = None
+        self._resource_request_pending = False
         self.setWindowTitle("Amethyst")
         self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.resize(1180, 780)
         self.setMinimumSize(960, 640)
         self.setStyleSheet(APP_STYLE)
         self._build()
+        self._duration_timer = QTimer(self)
+        self._duration_timer.setInterval(1000)
+        self._duration_timer.timeout.connect(self._update_task_duration)
+        self._resource_timer = QTimer(self)
+        self._resource_timer.setInterval(1000)
+        self._resource_timer.timeout.connect(self._request_resources)
         self.content.setEnabled(False)
         worker.ready.connect(self._ready)
         worker.result.connect(self._result)
@@ -114,6 +129,8 @@ class DesktopWindow(QMainWindow):
         self.settings.addTab(self.limits, "Operational limits")
         self.skills = SkillPage()
         self.permission_page = PermissionsPage()
+        self.resources = ResourcePage()
+        self.git_page = GitPage()
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setAccessibleName("Task status, tool results, and sources")
@@ -123,23 +140,45 @@ class DesktopWindow(QMainWindow):
             ("Connections", self.settings),
             ("Skills", self.skills),
             ("Permissions", self.permission_page),
+            ("Resources", self.resources),
+            ("Git branches", self.git_page),
             ("Task details", self.details),
         ):
             self.page_indexes[name] = self.pages.addWidget(page)
-        layout.addWidget(self.sidebar)
-        layout.addWidget(self.pages, 1)
+        splitter = QSplitter()
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(self.sidebar)
+        splitter.addWidget(self.pages)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([250, 930])
+        self._splitter = splitter
+        self._ui_settings = QSettings("1hack-Amethyst", "Amethyst")
+        saved_splitter = self._ui_settings.value("desktop/splitter")
+        if saved_splitter:
+            splitter.restoreState(saved_splitter)
+        splitter.splitterMoved.connect(
+            lambda *_: self._ui_settings.setValue(
+                "desktop/splitter", splitter.saveState()
+            )
+        )
+        layout.addWidget(splitter)
         self.setCentralWidget(root)
         self.sidebar.page_requested.connect(self._navigate)
         self.sidebar.new_conversation_requested.connect(self._new)
         self.sidebar.recent_conversation_requested.connect(self._open)
         self.sidebar.delete_conversation_requested.connect(self._delete)
         self.chat.message_submitted.connect(self._send)
+        self.chat.workspace_requested.connect(self._workspace)
+        self.chat.workspace_access_requested.connect(self._workspace_access)
+        self.chat.undo_requested.connect(self._undo_last)
         self.connections.command.connect(self.worker.submit)
         self.limits.command.connect(self.worker.submit)
         self.skills.command.connect(self.worker.submit)
         self.permission_page.command.connect(self.worker.submit)
-        self.permission_page.workspace_requested.connect(self._workspace)
         self.permission_page.refresh_requested.connect(self._refresh)
+        self.git_page.refresh_requested.connect(
+            lambda: self.worker.submit("git_branches")
+        )
 
     def _chat_area(self) -> QWidget:
         """Add model selection, cancellation, and explicit budget controls.
@@ -222,6 +261,13 @@ class DesktopWindow(QMainWindow):
         """
         self.pages.setCurrentIndex(self.page_indexes.get(name, 0))
         self.sidebar.set_active_page(name)
+        if name == "Resources":
+            self._request_resources()
+            self._resource_timer.start()
+        else:
+            self._resource_timer.stop()
+        if name == "Git branches":
+            self.worker.submit("git_branches")
 
     def _new(self) -> None:
         """Prepare a fresh conversation while preserving saved history.
@@ -236,9 +282,10 @@ class DesktopWindow(QMainWindow):
         """
         if self.busy or self.history_busy:
             return
-        self.conversation_id = None
+        self.conversation_id = uuid4().hex
         self.sidebar.set_active_conversation(None)
         self.chat.reset()
+        self.worker.submit("activate_conversation", self.conversation_id)
         self._navigate("Chat")
 
     def _open(self, identifier: str) -> None:
@@ -302,6 +349,12 @@ class DesktopWindow(QMainWindow):
             self.statusBar().showMessage("Add and enable a model in Connections.")
             return
         self.conversation_id = self.conversation_id or uuid4().hex
+        if model != self._last_model_id:
+            if self._last_model_id:
+                self.details.appendPlainText(f"Model changed to {model}.")
+            self._last_model_id = model
+        self._task_started_at = time.monotonic()
+        self._duration_timer.start()
         self.busy = True
         self.models.setEnabled(False)
         self.connections.setEnabled(False)
@@ -314,18 +367,34 @@ class DesktopWindow(QMainWindow):
             StartTask(self.conversation_id, prompt, model, self.skills.selected_ids()),
         )
 
-    def _event(self, event: TaskEvent) -> None:
+    def _event(
+        self, event: TaskEvent | ApprovalRequest | ActionRecord | tuple
+    ) -> None:
         """Render sequenced output, terminal states, approvals, and tool sources.
 
         Parameters
         ----------
-        event : TaskEvent
-            Application event emitted on its owning loop.
+        event : TaskEvent, ApprovalRequest, ActionRecord, or tuple
+            Application event or direct worker notification.
 
         Returns
         -------
         None
         """
+        if isinstance(event, ApprovalRequest):
+            self._approval(event)
+            return
+        if isinstance(event, ActionRecord):
+            files = ", ".join(event.file_paths) or "no file paths"
+            self.details.appendPlainText(
+                f"{event.tool} · {event.status}: {event.summary} [{files}]"
+            )
+            if event.tool == "model.selection":
+                self.chat.add_notice(event.summary)
+            return
+        if isinstance(event, tuple) and event[0] == "ollama_progress":
+            self.connections.models.notice.setText(f"Ollama pull: {event[1]}")
+            return
         payload = event.payload
         if isinstance(payload, TextDelta):
             self.chat.append_delta(payload.text)
@@ -340,6 +409,9 @@ class DesktopWindow(QMainWindow):
             label = TASK_STATUS_LABELS[payload.status]
             self.statusBar().showMessage(label + ": " + payload.message)
             self.details.appendPlainText(label + ": " + payload.message)
+            self.chat.set_activity(
+                label + (f" · {payload.message}" if payload.message else "")
+            )
             self.cancel.setEnabled(payload.status not in TERMINAL)
             self.increase.setEnabled(payload.status == TaskStatus.PAUSED_FOR_BUDGET)
             if payload.status in TERMINAL:
@@ -349,12 +421,23 @@ class DesktopWindow(QMainWindow):
                     self.approval_dialog.reject()
         elif isinstance(payload, TaskFailure):
             self.details.appendPlainText(payload.message)
-            self.chat.show_error(payload.message)
+            self.chat.show_error(payload.message, payload.stacktrace)
+            # A failure event can arrive before the terminal-state event. Release
+            # the composer here as well so an interrupted event stream cannot
+            # leave the conversation unusable.
+            self._idle()
+            self.chat.finish_turn("Failed")
+            self._refresh()
         elif isinstance(payload, ToolResult):
             text = ("[Truncated] " if payload.truncated else "") + payload.content
             self.details.appendPlainText(text)
             for source in payload.sources:
                 self.details.appendPlainText(source.url or source.identifier)
+        elif isinstance(payload, ActionRecord):
+            files = ", ".join(payload.file_paths) or "no file paths"
+            self.details.appendPlainText(
+                f"{payload.tool} · {payload.status}: {payload.summary} [{files}]"
+            )
         elif isinstance(payload, ApprovalRequest):
             self._approval(payload)
 
@@ -446,17 +529,47 @@ class DesktopWindow(QMainWindow):
             self.history_busy = False
             self.conversation_id = value.id
             self.chat.load_conversation(value)
+            self._show_action_history(value)
             self.sidebar.set_active_conversation(value.id)
             self._navigate("Chat")
         elif action == "send":
             self._idle()
-            self.sidebar.set_active_conversation(value)
+            self.sidebar.set_active_conversation(value.id)
+            self.chat.set_workspace(
+                value.workspace_root,
+                value.workspace_read_granted,
+                len(value.undo_records),
+            )
+            self._refresh()
+        elif action in {"workspace", "workspace_access"}:
+            self.history_busy = False
+            if value.id == self.conversation_id:
+                self.chat.set_workspace(
+                    value.workspace_root,
+                    value.workspace_read_granted,
+                    len(value.undo_records),
+                )
+            self._refresh()
+        elif action == "undo_last":
+            self.history_busy = False
+            self.conversation_id = value.id
+            self.chat.load_conversation(value)
+            self._show_action_history(value)
+            self.details.appendPlainText("The latest file change was reverted.")
             self._refresh()
         elif action == "warnings":
             for warning in value:
                 self.details.appendPlainText(warning)
         elif action == "test_connection":
             self.connections.notice.setText(value.message)
+        elif action == "resources":
+            self._resource_request_pending = False
+            self.resources.update_snapshot(value)
+        elif action in {"ollama_list", "ollama_pull"}:
+            names = ", ".join(value) if value else "No local models found."
+            self.connections.models.notice.setText(f"Local Ollama models: {names}")
+        elif action == "git_branches":
+            self.git_page.set_branches(value)
         elif action not in {"close", "cancel", "budget"}:
             self.history_busy = False
             self.statusBar().showMessage("Operation completed.")
@@ -490,6 +603,40 @@ class DesktopWindow(QMainWindow):
         self.connections.refresh(value["connections"])
         self.skills.refresh(value["skills"])
         self.permission_page.refresh(value)
+        active = next(
+            (
+                item
+                for item in value["conversations"]
+                if item.id == self.conversation_id
+            ),
+            None,
+        )
+        if active:
+            self.chat.set_workspace(
+                active.workspace_root,
+                active.workspace_read_granted,
+                len(active.undo_records),
+            )
+
+    def _show_action_history(self, conversation) -> None:
+        """Render retained minimal action summaries for a reopened conversation.
+
+        Parameters
+        ----------
+        conversation : Conversation
+            Persisted conversation with safe action metadata.
+
+        Returns
+        -------
+        None
+        """
+        self.details.clear()
+        for action in conversation.action_history:
+            files = ", ".join(action.file_paths) or "no file paths"
+            self.details.appendPlainText(
+                f"{action.created_at} · {action.tool} · {action.status}: "
+                f"{action.summary} [{files}]"
+            )
 
     def _idle(self) -> None:
         """Restore configuration and composer controls after task finalization.
@@ -509,8 +656,12 @@ class DesktopWindow(QMainWindow):
         self.skills.setEnabled(True)
         self.cancel.setEnabled(False)
         self.increase.setEnabled(False)
+        self._duration_timer.stop()
+        self._task_started_at = None
 
-    def _failure(self, action: str, message: str) -> None:
+    def _failure(
+        self, action: str, message: str, stacktrace: tuple[str, ...] = ()
+    ) -> None:
         """Show a safe failure and release controls for failed task submission.
 
         Parameters
@@ -519,6 +670,8 @@ class DesktopWindow(QMainWindow):
             Failed command.
         message : str
             Filtered error description.
+        stacktrace : tuple of str
+            Safe frame locations for local diagnostics.
 
         Returns
         -------
@@ -529,10 +682,17 @@ class DesktopWindow(QMainWindow):
         self.history_busy = False
         if action == "send":
             self._idle()
-            self.chat.show_error(message)
+            self.chat.show_error(message, stacktrace)
             self._refresh()
         if action in {"save_connection", "test_connection"}:
-            self.connections.notice.setText(message)
+            self.connections.report_error(message)
+        elif action in {"ollama_list", "ollama_pull"}:
+            self.connections.models.notice.setText(message)
+        elif action == "git_branches":
+            self.git_page.notice.setText(message)
+        elif action == "resources":
+            self._resource_request_pending = False
+            self.resources.note.setText(message)
 
     def _cancel(self) -> None:
         """Request cancellation while leaving final state to application events.
@@ -563,8 +723,8 @@ class DesktopWindow(QMainWindow):
         self.increase.setEnabled(False)
         self.worker.submit("budget", self.tokens.value())
 
-    def _workspace(self) -> None:
-        """Select the directory boundary for workspace and sandbox tools.
+    def _update_task_duration(self) -> None:
+        """Display elapsed task time while generation or tools are active.
 
         Parameters
         ----------
@@ -574,11 +734,83 @@ class DesktopWindow(QMainWindow):
         -------
         None
         """
-        if self.busy:
+        if self._task_started_at is None:
             return
+        elapsed = int(time.monotonic() - self._task_started_at)
+        self.statusBar().showMessage(
+            f"Task running · {elapsed // 60:02}:{elapsed % 60:02}"
+        )
+
+    def _request_resources(self) -> None:
+        """Request one telemetry sample without overlapping worker reads.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        if not self._resource_request_pending:
+            self._resource_request_pending = True
+            self.worker.submit("resources")
+
+    def _workspace(self) -> None:
+        """Select a directory boundary for the active conversation.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        if self.busy or self.history_busy:
+            return
+        if self.conversation_id is None:
+            self.conversation_id = uuid4().hex
+            self.worker.submit("activate_conversation", self.conversation_id)
         path = QFileDialog.getExistingDirectory(self, "Select workspace")
-        if path:
-            self.worker.submit("workspace", path)
+        if path and self.conversation_id:
+            self.history_busy = True
+            self.worker.submit("workspace", (self.conversation_id, path))
+
+    def _workspace_access(self, granted: bool) -> None:
+        """Persist and apply the active conversation's workspace read grant.
+
+        Parameters
+        ----------
+        granted : bool
+            Whether read access should be active for this conversation.
+
+        Returns
+        -------
+        None
+        """
+        if self.busy or self.history_busy or not self.conversation_id:
+            return
+        self.history_busy = True
+        self.worker.submit(
+            "workspace_access", (self.conversation_id, granted)
+        )
+
+    def _undo_last(self) -> None:
+        """Request the latest inverse file diff for explicit approval.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        if self.busy or self.history_busy or not self.conversation_id:
+            return
+        self.history_busy = True
+        self.worker.submit("undo_last", self.conversation_id)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Wait asynchronously for task cleanup before destroying the Qt thread.

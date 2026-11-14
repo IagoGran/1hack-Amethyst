@@ -157,16 +157,22 @@ QFrame#assistantResponse {
 }
 QLabel#assistantRole { color: #b99bdc; font-size: 8pt; font-weight: 700; }
 QLabel#assistantContent { color: #e8e2ef; }
+QTextBrowser#assistantContent { color: #e8e2ef; background: transparent; border: 0; }
 QFrame#userMessage { background: transparent; border: 0; }
 QLabel#userRole { color: #a5a1ad; font-size: 8pt; font-weight: 700; }
 QLabel#userContent { color: #dedbe5; }
+QTextBrowser#userContent { color: #dedbe5; background: transparent; border: 0; }
 QFrame#errorMessage {
   background: #2b2026;
   border: 1px solid #63404b;
   border-radius: 12px;
 }
+QFrame#systemMessage { background: #191a20; border: 1px solid #3a3942; border-radius: 8px; }
+QTextBrowser#systemContent { color: #aaa5b3; background: transparent; border: 0; }
 QLabel#errorRole { color: #edabbc; font-size: 8pt; font-weight: 700; }
 QLabel#errorContent { color: #f0dbe0; }
+QTextBrowser#errorContent { color: #f0dbe0; background: transparent; border: 0; }
+QLabel#messageTimestamp { color: #85818d; font-size: 8pt; }
 QPushButton#send {
   background: #9565e0;
   color: white;

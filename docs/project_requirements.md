@@ -67,7 +67,7 @@ The project aims to develop an AI-powered coding agent that can generate, inspec
 | FR-28 | **Scoped permissions:** Users shall be able to grant, inspect, and revoke permissions for tools and local resources. | MVP | Added |
 | FR-29 | **High-impact action approval:** The agent shall request explicit approval before performing destructive actions, database writes, or other actions designated as high impact. | MVP | Added |
 | FR-30 | **Approval enforcement:** The system shall prevent tool execution if the required approval has not been granted or has been revoked. | MVP | Added |
-| FR-31 | **Action history:** The system shall record tool invocations, their outcomes, and relevant approval decisions for later inspection. | Later | Added |
+| FR-31 | **Action history:** The system shall record tool invocations, their outcomes, and relevant approval decisions for later inspection. | MVP | Added |
 
 ### 3.6 Skills and Customization
 
@@ -159,7 +159,8 @@ Exact SDK versions and model IDs are implementation configuration choices. Broad
 - A protected-action approval shall cover one action or an explicitly listed batch of actions and diffs. A task-level request alone shall not authorize unspecified future protected actions.
 - Existing-file edits require approval of the displayed diff. Changed proposals, including changes to the file state that invalidate the reviewed diff, require renewed approval.
 - Approval is consumed by execution of its listed actions and expires no later than task completion. Unused approvals shall not carry into a new task or app session.
-- Read-only access grants may last for the current application session and shall expire on app exit.
+- Read-only grants for external connectors may last for the current application session and shall expire on app exit.
+- Each conversation may retain one workspace root and its `workspace.read` grant. Opening the conversation restores the grant; users can revoke it at any time. Changing the root revokes its grant, and deleting the conversation removes its workspace metadata.
 - Users shall be able to inspect and revoke granted permissions. Revocation shall block further protected actions, including unexecuted actions in a previously approved batch.
 - Acceptance shall verify individual and batch approval, denial, expiry, revocation, and changed-diff invalidation (FR-15 and FR-26 through FR-30).
 
@@ -210,10 +211,11 @@ All limits below shall be configurable. The system shall enforce the lower of it
 - Conversations shall persist locally until the user deletes them. Viewing, resuming, and deleting conversations are MVP capabilities (FR-04).
 - Settings and saved skills shall remain until deleted.
 - Retrieved content and copied workspace data shall be discarded after the task unless explicitly saved. User project files and source databases are unaffected. Content incorporated into a retained conversation follows that conversation's retention policy; separate raw retrieval and workspace copies shall not be retained by default.
+- When a user-approved file edit is applied, the prior content may be retained in that conversation as an undo snapshot until the conversation is deleted. These snapshots are stored locally without encryption and are removed when their chat is deleted or its workspace root changes.
 - Redacted diagnostic logs shall expire after seven days. Users shall have an explicit option to save selected logs permanently; saved copies remain until deleted and shall retain the same redaction rules.
 - Credentials shall be stored in the operating system's credential store. If unavailable, including in WSL setups, credentials shall remain in memory only and be requested again after restart. There shall be no plaintext disk fallback.
 - Configuration exports, ordinary chat messages, logs, and error output shall not expose secrets.
-- Normal diagnostic logs shall contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Diagnostic logging does not bring the richer action-history interface in FR-31 into the MVP.
+- Normal diagnostic logs shall contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. The separate conversation action history shall contain only tool name, status, timestamp, affected file paths, and a brief summary; it shall exclude tool arguments and result bodies.
 - Acceptance shall verify conversation persistence/resumption/deletion, seven-day log expiry and explicit permanent saving, temporary-data cleanup, credential-store fallback, and secret redaction.
 
 ### 5.8 MVP Automated Testing Gate
@@ -225,10 +227,18 @@ All limits below shall be configurable. The system shall enforce the lower of it
 - Deterministic automated checks shall run without live credentials. Tests that exercise live services and performance measurements shall be explicitly configured and report their environment separately.
 - The functional checks in sections 5.1 through 5.7 form part of acceptance; the coverage percentage does not replace them.
 
+### 5.9 User-approved desktop additions
+
+- Each chat shall have one workspace root. Its workspace read grant restores when reopened, is revocable, and is revoked when the root changes. External connector read grants remain session-scoped.
+- Conversation messages shall persist UTC timestamps and display them in local time. Assistant messages shall render Markdown and code; task status, duration, errors, tool activity, model switches, token use, and action summaries shall be visible.
+- A local resource panel shall chart machine CPU, memory, and detectable GPU use, and display Ollama loaded-model/VRAM metadata when the local API reports it. Missing telemetry shall be shown as unavailable. The panel shall not control devices or estimate CO₂.
+- Ollama model listing and pulling shall use a local loopback endpoint only and show streamed pull status. Git branch metadata shall be displayed read-only without invoking Git commands or changing repository state.
+- Workspace file changes shall retain a per-chat undo snapshot and require a fresh diff approval to restore it. Snapshots remain local and unencrypted until chat deletion or workspace-root change.
+
 ## 6. MVP Boundary and Remaining Recommendations
 
 The approved decisions in section 5 include the standalone desktop deployment and selected integrations, conversation viewing/resumption/deletion, sandboxed command and test execution, scoped approvals, operational limits, retention and credential handling, and the automated testing gate. FR-04, FR-16, FR-17, and NFR-06 therefore belong to the MVP.
 
-The remaining suggested MVP boundary includes chat, code generation and inspection, task-state checks, database read access, web search, vector retrieval, basic skills, explicit approval workflows, and configurable connections, as constrained by the approved decisions above. Richer action history, extensible connector registration, broader model-parameter controls, and portable configuration remain later-release recommendations.
+The remaining suggested MVP boundary includes chat, code generation and inspection, task-state checks, database read access, web search, vector retrieval, basic skills, explicit approval workflows, and configurable connections, as constrained by the approved decisions above. Extensible connector registration, broader model-parameter controls, and portable configuration remain later-release recommendations.
 
 > **Note:** Section 5 records project-owner decisions. Other MVP/Later classifications and **Added** requirements remain recommendations unless explicitly adopted there. The **Origin** column records provenance, not approval status.
