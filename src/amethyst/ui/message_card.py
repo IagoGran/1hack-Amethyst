@@ -1,8 +1,11 @@
 """Compact role-styled message cards for conversation transcripts."""
 
 from datetime import datetime
+from math import ceil
+from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -48,9 +51,19 @@ class ConversationMessageCard(QFrame):
         super().__init__(parent)
         self._role = role
         self._raw_content = content
+        self._action_callback: Callable[[], None] | None = None
+        self._action_button: QPushButton | None = None
+        self._thinking_frame = 0
         self._content = QTextBrowser()
         self._content.setMarkdown(content)
         self._build_content(created_at, stacktrace)
+        self._thinking_timer = QTimer(self)
+        self._thinking_timer.setInterval(350)
+        self._thinking_timer.timeout.connect(self._animate_thinking)
+        self._content.document().documentLayout().documentSizeChanged.connect(
+            self._fit_content_height
+        )
+        self._fit_content_height()
 
     def _build_content(
         self, created_at: str | None, stacktrace: tuple[str, ...]
@@ -114,12 +127,16 @@ class ConversationMessageCard(QFrame):
         self._content.setSizeAdjustPolicy(
             QTextBrowser.SizeAdjustPolicy.AdjustToContents
         )
-        self._content.setMinimumHeight(24)
-        self._content.setMaximumHeight(1200)
+        self._content.setMinimumHeight(28)
         self._content.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         layout.addWidget(self._content)
+        self._thinking = QLabel("Thinking")
+        self._thinking.setObjectName("thinkingIndicator")
+        self._thinking.setVisible(False)
+        if assistant:
+            layout.addWidget(self._thinking)
         if error and stacktrace:
             details = QPlainTextEdit("\n".join(stacktrace))
             details.setReadOnly(True)
@@ -145,6 +162,113 @@ class ConversationMessageCard(QFrame):
         """
         self._raw_content += text
         self._content.setMarkdown(self._raw_content)
+        if text.strip():
+            self.set_thinking(False)
+        self._fit_content_height()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Recalculate wrapped Markdown height whenever the card width changes.
+
+        Parameters
+        ----------
+        event : QResizeEvent
+            Widget resize event.
+
+        Returns
+        -------
+        None
+        """
+        super().resizeEvent(event)
+        width = max(1, self._content.viewport().width())
+        self._content.document().setTextWidth(width)
+        QTimer.singleShot(0, self._fit_content_height)
+
+    def _fit_content_height(self, *_args: object) -> None:
+        """Size the Markdown browser to its wrapped document, without inner scroll.
+
+        Returns
+        -------
+        None
+        """
+        width = max(1, self._content.viewport().width())
+        document = self._content.document()
+        document.setTextWidth(width)
+        height = ceil(document.documentLayout().documentSize().height()) + 4
+        self._content.setFixedHeight(max(28, height))
+
+    def set_thinking(self, active: bool) -> None:
+        """Start or stop the animated status shown inside an assistant bubble.
+
+        Parameters
+        ----------
+        active : bool
+            Whether the model is waiting to emit its first text fragment.
+
+        Returns
+        -------
+        None
+        """
+        if self._role != "assistant":
+            return
+        if active:
+            self._thinking_frame = 0
+            self._thinking.setText("Thinking")
+            self._thinking.show()
+            self._thinking_timer.start()
+        else:
+            self._thinking_timer.stop()
+            self._thinking.hide()
+
+    def _animate_thinking(self) -> None:
+        """Advance the thinking indicator's animated ellipsis.
+
+        Returns
+        -------
+        None
+        """
+        self._thinking_frame = (self._thinking_frame + 1) % 4
+        self._thinking.setText("Thinking" + "." * self._thinking_frame)
+
+    def set_action_button(
+        self, label: str | None, callback: Callable[[], None] | None = None
+    ) -> None:
+        """Show or remove a contextual action inside this message card.
+
+        Parameters
+        ----------
+        label : str or None
+            Visible button text, or ``None`` to hide the action.
+        callback : callable or None
+            Action invoked when the button is pressed.
+
+        Returns
+        -------
+        None
+        """
+        if label is None or callback is None or self._role != "assistant":
+            self._action_callback = None
+            if self._action_button:
+                self._action_button.hide()
+            return
+        self._action_callback = callback
+        if self._action_button is None:
+            self._action_button = QPushButton()
+            self._action_button.setObjectName("messageAction")
+            self._action_button.clicked.connect(self._invoke_action)
+            self.layout().addWidget(self._action_button)
+        self._action_button.setText(label)
+        self._action_button.setAccessibleName(label)
+        self._action_button.show()
+
+    def _invoke_action(self) -> None:
+        """Invoke the currently assigned message action, if available.
+
+        Returns
+        -------
+        None
+        """
+        if self._action_callback:
+            self._action_callback()
 
     def is_empty(self) -> bool:
         """Return whether the message card has received any visible content.
@@ -159,6 +283,17 @@ class ConversationMessageCard(QFrame):
             True when the card contains no text.
         """
         return not self._raw_content.strip()
+
+    @property
+    def role(self) -> str:
+        """Return the role represented by this transcript card.
+
+        Returns
+        -------
+        str
+            Message role used by transcript action placement.
+        """
+        return self._role
 
     @staticmethod
     def _format_timestamp(value: str | None) -> str:

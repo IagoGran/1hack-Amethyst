@@ -158,6 +158,7 @@ QFrame#assistantResponse {
 QLabel#assistantRole { color: #b99bdc; font-size: 8pt; font-weight: 700; }
 QLabel#assistantContent { color: #e8e2ef; }
 QTextBrowser#assistantContent { color: #e8e2ef; background: transparent; border: 0; }
+QLabel#thinkingIndicator { color: #b99bdc; font-style: italic; padding-top: 3px; }
 QFrame#userMessage { background: transparent; border: 0; }
 QLabel#userRole { color: #a5a1ad; font-size: 8pt; font-weight: 700; }
 QLabel#userContent { color: #dedbe5; }

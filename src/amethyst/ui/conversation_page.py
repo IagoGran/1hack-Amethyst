@@ -86,10 +86,6 @@ class ConversationPage(ComposerPage):
         self.workspace_access = QPushButton("Allow reads")
         self.workspace_access.clicked.connect(self._toggle_workspace_access)
         workspace_row.addWidget(self.workspace_access)
-        self.undo_button = QPushButton("Review undo")
-        self.undo_button.setEnabled(False)
-        self.undo_button.clicked.connect(self.undo_requested.emit)
-        workspace_row.addWidget(self.undo_button)
         self.content_layout.addLayout(workspace_row)
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -173,6 +169,8 @@ class ConversationPage(ComposerPage):
         """
         self._add_message("user", prompt)
         self._active_response = self._add_message("assistant", "")
+        self._active_response.set_thinking(True)
+        self._update_undo_action(0)
         self._prompt.clear()
         self._prompt.setEnabled(False)
         self._send.setEnabled(False)
@@ -209,6 +207,8 @@ class ConversationPage(ComposerPage):
         -------
         None
         """
+        if self._active_response is not None:
+            self._active_response.set_thinking(False)
         self._discard_empty_response()
         self._prompt.setEnabled(True)
         self._send.setEnabled(True)
@@ -356,8 +356,37 @@ class ConversationPage(ComposerPage):
             "Revoke reads" if self.workspace_granted else "Allow reads"
         )
         self.workspace_access.setEnabled(bool(root))
-        self.undo_button.setEnabled(bool(root and granted and undo_count))
-        self.undo_button.setText(f"Review undo ({undo_count})")
+        self._update_undo_action(undo_count)
+
+    def _update_undo_action(self, undo_count: int) -> None:
+        """Place an undo review button in the latest eligible assistant reply.
+
+        Parameters
+        ----------
+        undo_count : int
+            Number of retained file snapshots available for review.
+
+        Returns
+        -------
+        None
+        """
+        latest = next(
+            (
+                card
+                for card in reversed(self._message_cards)
+                if card.role == "assistant" and not card.is_empty()
+            ),
+            None,
+        )
+        for card in self._message_cards:
+            if card is not latest:
+                card.set_action_button(None)
+        if latest and self.workspace_root and self.workspace_granted and undo_count:
+            latest.set_action_button(
+                f"Review undo ({undo_count})", self.undo_requested.emit
+            )
+        elif latest:
+            latest.set_action_button(None)
 
     def _toggle_workspace_access(self) -> None:
         """Request the inverse chat-scoped workspace read permission state.

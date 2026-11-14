@@ -269,6 +269,15 @@ class GeminiModelProvider(ModelAdapter):
             yield ModelCompleted(usage, tuple(calls), finish_reason)
         except ContractError as error:
             _attach_usage(error, usage)
+            if error.code == ErrorCode.AUTHENTICATION:
+                raise ContractError(
+                    error.code,
+                    "Gemini rejected the API key or denied project access. Check "
+                    "the key, its restrictions, and Gemini API activation.",
+                    transient=error.transient,
+                    retry_after_seconds=error.retry_after_seconds,
+                    usage=error.usage,
+                ) from None
             raise
         finally:
             await stream.aclose()
@@ -338,13 +347,93 @@ def _get_json(url: str) -> dict[str, Any]:
                 raise json.JSONDecodeError("Expected JSON object", "", 0)
             return cast(dict[str, Any], payload)
     except urllib.error.HTTPError as exc:
-        code = (
-            ErrorCode.AUTHENTICATION
-            if exc.code in (401, 403)
-            else ErrorCode.UNAVAILABLE
-        )
+        code = _http_error_code(exc.code)
         raise ContractError(
             code,
-            "Gemini connection failed.",
+            _http_error_message(exc),
             transient=exc.code >= 500 or exc.code == 429,
         ) from None
+
+
+def _http_error_code(status: int) -> ErrorCode:
+    """Map Gemini HTTP status codes to stable connection error categories.
+
+    Parameters
+    ----------
+    status : int
+        HTTP status returned by Gemini.
+
+    Returns
+    -------
+    ErrorCode
+        Safe application-level error category.
+    """
+    if status in (401, 403):
+        return ErrorCode.AUTHENTICATION
+    if status in (400, 404, 422):
+        return ErrorCode.INVALID_INPUT
+    return ErrorCode.UNAVAILABLE
+
+
+def _http_error_message(error: urllib.error.HTTPError) -> str:
+    """Explain Gemini HTTP failures without exposing credentials or URLs.
+
+    Parameters
+    ----------
+    error : urllib.error.HTTPError
+        HTTP response returned by Gemini.
+
+    Returns
+    -------
+    str
+        Actionable, secret-safe diagnostic for the connection editor.
+    """
+    invalid_key = _is_invalid_api_key(error)
+    if error.code == 401:
+        return "Gemini rejected the API key (HTTP 401). Check that it is valid."
+    if invalid_key:
+        return (
+            f"Gemini rejected the API key (HTTP {error.code}). Check that it "
+            "was copied correctly and is active."
+        )
+    if error.code == 403:
+        return (
+            "Gemini denied access (HTTP 403). Check the API key restrictions, "
+            "project access, and Gemini API availability for that project."
+        )
+    if error.code == 429:
+        return "Gemini quota or rate limit reached (HTTP 429). Check project quota."
+    if error.code == 404:
+        return "Gemini endpoint or model was not found (HTTP 404)."
+    if error.code == 400:
+        return "Gemini rejected the request (HTTP 400). Check the model ID and settings."
+    if error.code >= 500:
+        return f"Gemini service error (HTTP {error.code}); try again later."
+    return f"Gemini connection failed (HTTP {error.code})."
+
+
+def _is_invalid_api_key(error: urllib.error.HTTPError) -> bool:
+    """Recognize Google's invalid-key response without displaying raw details.
+
+    Parameters
+    ----------
+    error : urllib.error.HTTPError
+        HTTP response returned by Gemini.
+
+    Returns
+    -------
+    bool
+        Whether the bounded JSON error message explicitly rejects the API key.
+    """
+    if error.code not in (400, 403):
+        return False
+    try:
+        body = json.loads(error.read(32_000))
+    except (OSError, ValueError):
+        return False
+    details = body.get("error") if isinstance(body, dict) else None
+    message = details.get("message") if isinstance(details, dict) else None
+    if not isinstance(message, str):
+        return False
+    lowered = message.lower()
+    return "api key not valid" in lowered or "invalid api key" in lowered

@@ -545,7 +545,10 @@ class DesktopWindow(QMainWindow):
             for warning in value:
                 self.details.appendPlainText(warning)
         elif action == "test_connection":
-            self.connections.notice.setText(value.message)
+            if value.available:
+                self.connections.notice.setText(value.message)
+            else:
+                self.connections.report_error(value.message)
         elif action == "resources":
             self._resource_request_pending = False
             self.resources.update_snapshot(value)
