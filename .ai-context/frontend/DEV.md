@@ -44,7 +44,7 @@ Tools and workflow: `Pending`.
 
 See `.ai-context/CONVENTIONS.md`; interface-specific rules: `Pending`.
 
-In the A3 preview, the sidebar can be manually pinned open or collapsed to a narrow rail. An unpinned rail expands with a short eased animation on hover and collapses after the pointer leaves. The sidebar uses a distinct background tone from the content area; recent saved conversations appear in a separate tonal section and open directly from the sidebar.
+In the A3 preview, the sidebar can be manually pinned open or collapsed to a narrow rail. An unpinned rail expands with a short eased animation on hover and collapses after the pointer leaves. The sidebar uses the purple accent palette with matching active navigation and chat highlights. Recent saved chats appear in a separate section, and all saved chats appear in a collapsible list that fills the remaining sidebar height and scrolls as needed; the open conversation is highlighted in both lists. Right-clicking a chat offers the existing confirmed delete workflow. Conversation history is no longer a separate navigation page. After a chat turn finishes, input focus returns to the message field.
 
 Approval controls must identify the exact action or listed batch/diffs, require renewed approval after changes, and expose permission revocation. Display token-budget pauses and allow an explicit budget increase. Distinguish truncated results and timeout outcomes from successful completion. Approved p95 targets are 200 ms for UI status feedback, 10 seconds for first visible model token, and 120 seconds for a typical task under the benchmark conditions in requirements section 5.5.
 

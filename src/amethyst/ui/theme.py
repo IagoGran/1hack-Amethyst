@@ -15,8 +15,8 @@ QPushButton#secondaryAction { background: #30263d; border-color: #624b7c; color:
 QPushButton#secondaryAction:hover { background: #3c2e4d; }
 QPushButton#dangerAction { background: #2b2026; border-color: #63404b; color: #f0c4cf; }
 QPushButton#dangerAction:hover { background: #3a252d; }
-QWidget#sidebar { background: #1c1e27; border: 0; }
-QWidget#recentSection { background: #282630; border: 0; border-radius: 11px; }
+QWidget#sidebar { background: #211b2b; border-right: 1px solid #392d49; }
+QWidget#recentSection { background: #2a2235; border: 1px solid #49395e; border-radius: 11px; }
 QLabel#brand { color: #f4f1f8; font-size: 16pt; font-weight: 700; }
 QLabel#brandMark { background: transparent; border: 0; }
 QLabel#eyebrow { color: #888691; font-size: 8pt; font-weight: 700; }
@@ -24,13 +24,27 @@ QLabel#pageEyebrow { color: #a895bc; font-size: 8pt; font-weight: 700; }
 QLabel#pageTitle { color: #f5f1f8; font-size: 21pt; font-weight: 700; }
 QLabel#pageSubtitle { color: #96939f; font-size: 9pt; }
 QToolButton#sidebarMode {
-  background: #292630; color: #e4d9ef; border: 1px solid #4a4053;
+  background: #30263d; color: #e4d9ef; border: 1px solid #59466f;
   border-radius: 8px; font-size: 9pt; min-width: 40px; min-height: 30px;
   padding: 5px 7px; text-align: center;
 }
-QToolButton#sidebarMode:hover { background: #38323f; border-color: #7c6096; }
-QToolButton#sidebarMode:checked { background: #34303c; }
-QToolButton#sidebarMode:checked:hover { background: #40394a; }
+QToolButton#sidebarMode:hover { background: #3c2e4d; border-color: #9270b4; }
+QToolButton#sidebarMode:checked { background: #382d46; }
+QToolButton#sidebarMode:checked:hover { background: #463757; }
+QToolButton#allChatsToggle {
+  background: transparent; color: #bca8d1; border: 0; border-radius: 7px;
+  font-size: 8pt; font-weight: 700; padding: 8px 7px; text-align: left;
+}
+QToolButton#allChatsToggle:hover { background: #30263d; color: #e5d4f7; }
+QScrollArea#allChatsScroll, QWidget#allChatsContent { background: transparent; border: 0; }
+QScrollArea#allChatsScroll::viewport { background: transparent; border: 0; }
+QScrollBar:vertical {
+  background: transparent; width: 7px; margin: 2px 0;
+}
+QScrollBar::handle:vertical { background: #465665; border-radius: 3px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #6d879a; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
 QLabel#sidebarProfile { color: #9894a1; font-size: 9pt; }
 QPushButton#newConversation {
   background: #292430; color: #eadffc; border: 1px solid #49375f;
@@ -47,8 +61,12 @@ QPushButton#nav {
 QPushButton#nav[active="true"] { background: #2b2536; color: #decaff; }
 QPushButton#nav[collapsed="true"] { text-align: center; padding-left: 4px; padding-right: 4px; }
 QPushButton#recent {
-  background: transparent; color: #a6a3ae; border: 0; padding: 7px 12px;
+  background: transparent; color: #c4bacf; border: 0; border-radius: 7px; padding: 7px 10px;
   text-align: left;
+}
+QPushButton#recent:hover { background: #382d46; color: #f0e5fa; }
+QPushButton#recent:checked, QPushButton#recent[active="true"] {
+  background: #463456; color: #f3eaff; border-left: 3px solid #b48ae2;
 }
 QLabel#muted { color: #96939f; }
 QLabel#statusPill {

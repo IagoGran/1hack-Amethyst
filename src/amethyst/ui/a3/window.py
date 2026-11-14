@@ -17,7 +17,6 @@ from amethyst.ports.persistence import ConversationRepository
 from amethyst.ui.branding import APP_ICON_PATH
 from amethyst.ui.a3.chat_page import A3ChatPage
 from amethyst.ui.a3.conversation_worker import ConversationWorker
-from amethyst.ui.a3.history_page import ConversationHistoryPage
 from amethyst.ui.placeholder_page import PlaceholderPage
 from amethyst.ui.sidebar import NavigationSidebar
 from amethyst.ui.theme import APP_STYLE
@@ -64,10 +63,8 @@ class A3DesktopWindow(QMainWindow):
         self._sidebar = NavigationSidebar()
         self._pages = QStackedWidget()
         self._chat = A3ChatPage()
-        self._history = ConversationHistoryPage()
         self._pages.addWidget(self._chat)
-        self._pages.addWidget(self._history)
-        self._indexes = {"Chat": 0, "Conversations": 1}
+        self._indexes = {"Chat": 0}
         for title, description in PLACEHOLDER_PAGES.items():
             self._indexes[title] = self._pages.addWidget(
                 PlaceholderPage(title, description)
@@ -116,8 +113,7 @@ class A3DesktopWindow(QMainWindow):
         self._sidebar.new_conversation_requested.connect(self._new_conversation)
         self._sidebar.recent_conversation_requested.connect(self._open_conversation)
         self._chat.message_submitted.connect(self._send_message)
-        self._history.open_requested.connect(self._open_conversation)
-        self._history.delete_requested.connect(self._confirm_delete)
+        self._sidebar.delete_conversation_requested.connect(self._confirm_delete)
 
     def _select_page(self, page: str) -> None:
         """Select a page and update its title and active navigation item."""
@@ -130,6 +126,7 @@ class A3DesktopWindow(QMainWindow):
         if self._is_busy():
             return
         self._conversation_id = None
+        self._sidebar.set_active_conversation(None)
         self._chat.reset()
         self._select_page("Chat")
 
@@ -155,6 +152,7 @@ class A3DesktopWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Yes and not self._is_busy():
             if conversation_id == self._conversation_id:
                 self._conversation_id = None
+                self._sidebar.set_active_conversation(None)
                 self._chat.reset()
             self._launch_worker("delete", conversation_id=conversation_id)
 
@@ -177,15 +175,12 @@ class A3DesktopWindow(QMainWindow):
             conversation_id=conversation_id,
             prompt=prompt,
         )
-        self._worker.conversations_loaded.connect(self._history.set_conversations)
-        self._worker.conversations_loaded.connect(
-            self._sidebar.set_recent_conversations
-        )
+        self._worker.conversations_loaded.connect(self._sidebar.set_conversations)
         self._worker.conversation_loaded.connect(self._show_conversation)
         self._worker.conversation_ready.connect(self._set_conversation_id)
         self._worker.message_delta.connect(self._chat.append_delta)
         self._worker.task_finished.connect(self._finish_turn)
-        self._worker.deleted.connect(self._history.show_deleted)
+        self._worker.deleted.connect(self._sidebar.show_deleted)
         self._worker.failed.connect(self._show_error)
         self._worker.finished.connect(self._worker_finished)
         self._worker.start()
@@ -194,18 +189,17 @@ class A3DesktopWindow(QMainWindow):
         """Set the active ID and display persisted messages for resumption."""
         self._conversation_id = conversation.id
         self._chat.load_conversation(conversation)
+        self._sidebar.set_active_conversation(conversation.id)
         self._select_page("Chat")
 
     def _set_conversation_id(self, conversation_id: str) -> None:
         """Remember the conversation ID created or continued by the worker."""
         self._conversation_id = conversation_id
+        self._sidebar.set_active_conversation(conversation_id)
 
     def _show_error(self, message: str) -> None:
         """Display a safe failure in chat or history, based on the active page."""
-        if self._pages.currentIndex() == self._indexes["Chat"]:
-            self._chat.show_error(message)
-        else:
-            self._history.show_error(message)
+        self._chat.show_error(message)
 
     def _worker_finished(self) -> None:
         """Restore the chat composer after an operation and release the worker."""

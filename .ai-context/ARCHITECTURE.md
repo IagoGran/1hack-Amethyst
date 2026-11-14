@@ -6,7 +6,7 @@ The product requires a standalone, local, single-user desktop chat interface and
 
 ## Main Components
 
-- Interface: standalone desktop window with chat, task status, settings, approvals, and conversation viewing/resumption/deletion. Exploratory PySide6 A1/A2/A3 previews live in `src/amethyst/ui/`; A3 exercises conversation history through `ConversationRepository` and a preview-only SQLite adapter with fictional sample conversations. Production framework and location remain `Pending`.
+- Interface: standalone desktop window with chat, task status, settings, approvals, and conversation viewing/resumption/deletion. Exploratory PySide6 A1/A2/A3 previews live in `src/amethyst/ui/`; A3 exposes recent chats and a collapsible all-chats sidebar list that fills available sidebar space, scrolls as needed, highlights the active chat, and supports confirmed context-menu deletion. It exercises conversation history through `ConversationRepository` and a preview-only SQLite adapter with fictional sample conversations. Production framework and location remain `Pending`.
 - Application/agent: `src/amethyst/application/`; `AgentService` implements task/event orchestration, context/skill application, tool selection, approval waits, cancellation, budgets, deadlines, and bounded retry/result handling through injected ports.
 - Domain: `src/amethyst/domain/`; contains task states and shared request/result/event values in `contracts.py`.
 - Contracts: `src/amethyst/ports/`; includes async application, model, tool/health, approval, repository, credential, and sandbox protocols. See `docs/s0_contract_baseline.md` for semantics and review status.
