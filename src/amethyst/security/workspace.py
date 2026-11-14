@@ -41,6 +41,23 @@ class Workspace:
         approvals: ApprovalEngine,
         max_bytes: int = 1_048_576,
     ) -> None:
+        """Bind scoped file access to the workspace identity and security session.
+
+        Parameters
+        ----------
+        root : Path
+            Application-owned data directory or approved workspace root.
+        permissions : PermissionService
+            Session-scoped read permission service.
+        approvals : ApprovalEngine
+            Session-scoped exact-action approval service.
+        max_bytes : int
+            Maximum workspace file size permitted for inspection or editing.
+
+        Returns
+        -------
+        None
+        """
         self.root = root.resolve(strict=True)
         self.permissions = permissions
         self.approvals = approvals
@@ -49,9 +66,33 @@ class Workspace:
         self._identity = (info.st_dev, info.st_ino)
 
     def resource(self, path: str) -> str:
+        """Resolve the permission resource for a validated relative file path.
+
+        Parameters
+        ----------
+        path : str
+            Scoped filesystem location used by the operation.
+
+        Returns
+        -------
+        str
+            Text produced by the operation.
+        """
         return str(self.root.joinpath(*self._parts(path)))
 
     def _parts(self, path: str) -> tuple[str, ...]:
+        """Validate a relative path without traversal or protected Git access.
+
+        Parameters
+        ----------
+        path : str
+            Scoped filesystem location used by the operation.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Value produced by the operation.
+        """
         value = PurePosixPath(path)
         parts = value.parts
         if (
@@ -69,6 +110,18 @@ class Workspace:
 
     @contextmanager
     def _parent(self, path: str) -> Iterator[tuple[int, str]]:
+        """Open validated parent descriptors without following symbolic links.
+
+        Parameters
+        ----------
+        path : str
+            Scoped filesystem location used by the operation.
+
+        Yields
+        ------
+        tuple[int, str]
+            Ordered values produced by the operation.
+        """
         parts = self._parts(path)
         descriptors: list[int] = []
         try:
@@ -92,6 +145,20 @@ class Workspace:
                 os.close(descriptor)
 
     def _read(self, parent: int, name: str) -> tuple[bytes | None, int]:
+        """Read a bounded regular file through its verified parent descriptor.
+
+        Parameters
+        ----------
+        parent : int
+            Owning widget, descriptor, or temporary-data directory.
+        name : str
+            Field, tool, file, or fixture name.
+
+        Returns
+        -------
+        tuple[bytes | None, int]
+            Value produced by the operation.
+        """
         try:
             fd = os.open(
                 name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
@@ -113,6 +180,20 @@ class Workspace:
             return data, stat.S_IMODE(info.st_mode) & 0o777
 
     def read(self, path: str, context: OperationContext) -> str:
+        """Read a permitted workspace file as bounded UTF-8 text.
+
+        Parameters
+        ----------
+        path : str
+            Scoped filesystem location used by the operation.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        str
+            Text produced by the operation.
+        """
         self.permissions.require(context, "workspace.read", self.resource(path))
         with self._parent(path) as (parent, name):
             data, _ = self._read(parent, name)
@@ -128,6 +209,22 @@ class Workspace:
     def propose(
         self, path: str, content: str | None, context: OperationContext
     ) -> WorkspaceEdit:
+        """Bind a meaningful file diff and current file state to an exact action.
+
+        Parameters
+        ----------
+        path : str
+            Scoped filesystem location used by the operation.
+        content : str | None
+            Text content to display, persist, or return.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        WorkspaceEdit
+            Exact reviewed file change and its bound action.
+        """
         self.permissions.require(context, "workspace.read", self.resource(path))
         with self._parent(path) as (parent, name):
             original, mode = self._read(parent, name)
@@ -194,6 +291,21 @@ class Workspace:
         self, edit: WorkspaceEdit, approval_id: str, context: OperationContext
     ) -> None:
         # Rebuild against the current file; also recheck revoked read scope.
+        """Recheck the reviewed file state and consume approval before atomic mutation.
+
+        Parameters
+        ----------
+        edit : WorkspaceEdit
+            Proposed workspace change bound to its reviewed action.
+        approval_id : str
+            Identifier of the reviewed approval record.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        None
+        """
         current = self.propose(edit.path, edit.content, context)
         reviewed = await self.approvals.inspect(approval_id)
         if (

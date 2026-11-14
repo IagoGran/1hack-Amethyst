@@ -38,6 +38,17 @@ from amethyst.security.retention import DiagnosticStore, TaskTemporaryData
     ],
 )
 def test_sql_write_admission_denied(query: str) -> None:
+    """Verify sql write admission denied.
+
+    Parameters
+    ----------
+    query : str
+        SQL statement to execute through read-only enforcement.
+
+    Returns
+    -------
+    None
+    """
     with pytest.raises(ContractError) as error:
         require_read_only_sql(query)
     assert error.value.code == ErrorCode.PERMISSION_DENIED
@@ -52,10 +63,31 @@ def test_sql_write_admission_denied(query: str) -> None:
     ],
 )
 def test_sql_reads_admitted(query: str) -> None:
+    """Verify sql reads admitted.
+
+    Parameters
+    ----------
+    query : str
+        SQL statement to execute through read-only enforcement.
+
+    Returns
+    -------
+    None
+    """
     require_read_only_sql(query)
 
 
 def test_limits_and_retry_classification() -> None:
+    """Verify limits and retry classification.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
     for seconds in (0, -1, float("nan")):
         with pytest.raises(ValueError):
             Limits(task_seconds=seconds)
@@ -91,6 +123,16 @@ def test_limits_and_retry_classification() -> None:
 
 
 def test_structured_and_byte_result_limits() -> None:
+    """Verify structured and byte result limits.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
     limits = Limits(sql_rows=2, retrieval_chunks=1, chunk_tokens=3, output_bytes=100)
     sql = bounded_result(
         ToolResult("id", json.dumps({"rows": [[1], [2], [3]], "columns": ["x"]})),
@@ -127,11 +169,43 @@ def test_structured_and_byte_result_limits() -> None:
 
 
 def test_deadline_excludes_only_approval_waits() -> None:
+    """Verify deadline excludes only approval waits.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise deadline excludes only approval waits.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         now = [0.0]
         deadline = Deadline(10, lambda: now[0])
 
         async def wait() -> int:
+            """Exercise deadline excludes only approval waits.
+
+            Parameters
+            ----------
+            None
+
+            Returns
+            -------
+            int
+                Computed count or amount.
+            """
             now[0] = 50
             return 1
 
@@ -149,27 +223,100 @@ def test_deadline_excludes_only_approval_waits() -> None:
 
 class Keyring:
     def __init__(self) -> None:
+        """Initialize keyring state and dependencies.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self.values: dict[str, str] = {}
         self.fail = False
 
     def get_password(self, service: str, username: str) -> str | None:
+        """Resolve a credential through the explicit OS backend.
+
+        Parameters
+        ----------
+        service : str
+            Application service used by the operation.
+        username : str
+            Opaque credential account identifier.
+
+        Returns
+        -------
+        str | None
+            Value produced by the operation.
+        """
         if self.fail:
             raise RuntimeError("private error")
         return self.values.get(username)
 
     def set_password(self, service: str, username: str, password: str) -> None:
+        """Store a credential through the explicit OS backend.
+
+        Parameters
+        ----------
+        service : str
+            Application service used by the operation.
+        username : str
+            Opaque credential account identifier.
+        password : str
+            Secret credential value kept outside ordinary settings.
+
+        Returns
+        -------
+        None
+        """
         if self.fail:
             raise RuntimeError("private error")
         self.values[username] = password
 
     def delete_password(self, service: str, username: str) -> None:
+        """Remove a credential through the explicit OS backend.
+
+        Parameters
+        ----------
+        service : str
+            Application service used by the operation.
+        username : str
+            Opaque credential account identifier.
+
+        Returns
+        -------
+        None
+        """
         if self.fail:
             raise RuntimeError("private error")
         del self.values[username]
 
 
 def test_os_credentials_and_memory_fallback() -> None:
+    """Verify os credentials and memory fallback.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise os credentials and memory fallback.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         redactor = Redactor()
         backend = Keyring()
         store = OSCredentialStore(redactor, backend)
@@ -204,6 +351,16 @@ def test_os_credentials_and_memory_fallback() -> None:
 
 
 def test_secret_redaction_across_stream_chunks() -> None:
+    """Verify secret redaction across stream chunks.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
     redactor = Redactor()
     redactor.register("secret-value")
     stream = StreamRedactor(redactor)
@@ -221,6 +378,17 @@ def test_secret_redaction_across_stream_chunks() -> None:
 
 
 def test_diagnostic_retention_and_temporary_cleanup(tmp_path: Path) -> None:
+    """Verify diagnostic retention and temporary cleanup.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
     now = [0.0]
     redactor = Redactor()
     store = DiagnosticStore(tmp_path / "logs", redactor, lambda: now[0])

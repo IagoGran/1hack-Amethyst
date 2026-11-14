@@ -37,49 +37,51 @@ S0 code is implemented: async ports, shared task/event/request/result types, det
 
 ## Workstream A — Desktop Experience
 
+Integration update (2026-11-14): A/B/C now compose through the real PySide6 desktop launcher on `feature/integration`. Implemented UI behavior, launch/configuration instructions, and headless integration checks are described in `desktop_integration.md`. Platform acceptance and live-service checks remain separate from implementation. The task ownership below is unchanged.
+
 Branch: `feature/mvp-desktop`
 
 ### A1. Desktop shell and platform launch — FR-01, FR-03, section 5.1
 
 - [ ] Select and document a desktop framework and packaging approach; validate it can launch on Ubuntu 24.04 x86-64 and through Windows 11 WSL2 GUI.
-- [ ] Add the standalone application window and application lifecycle.
-- [ ] Add navigation/layout for chat, conversations, settings, skills, permissions, and task details.
+- [x] Add the standalone application window and application lifecycle.
+- [x] Add navigation/layout for chat, conversations, settings, skills, permissions, and task details.
 - [ ] Add launch smoke tests for both target environments.
 
 ### A2. Chat and task interaction — FR-01, FR-02, FR-05, FR-08, FR-12, FR-18, NFR-02
 
-- [ ] Build message entry, transcript display, streaming response rendering, and errors.
-- [ ] Show running, paused-for-budget, completed, cancelled, and failed task states with useful progress updates.
-- [ ] Add cancellation UI and show when cancellation takes effect.
-- [ ] Support code-generation and supplied-error/debugging workflows through application contracts.
+- [x] Build message entry, transcript display, streaming response rendering, and errors.
+- [x] Show running, paused-for-budget, completed, cancelled, and failed task states with useful progress updates.
+- [x] Add cancellation UI and show when cancellation takes effect.
+- [x] Support code-generation and supplied-error/debugging workflows through application contracts.
 - [ ] Keep the interface responsive during generation and tool execution; measure status-feedback target from section 5.5.
 
 ### A3. Conversation history — FR-04
 
-- [ ] Add conversation list and open/resume actions.
-- [ ] Add delete action and clear feedback.
-- [ ] Connect to persistence contract; verify conversations remain until deleted and can be resumed after app restart.
+- [x] Add conversation list and open/resume actions.
+- [x] Add delete action and clear feedback.
+- [x] Connect to persistence contract; verify conversations remain until deleted and can be resumed after app restart.
 
 ### A4. Unified settings and connections UI — FR-03, FR-19, FR-21, FR-22, FR-24
 
-- [ ] Add model/provider configuration and model ID entry for OpenAI, Gemini, DeepSeek, and Ollama.
-- [ ] Add SQL connection forms for SQLite 3 and PostgreSQL 16+.
-- [ ] Add locally hosted Qdrant, Milvus, and ChromaDB settings and Brave Search API settings.
-- [ ] Support add, edit, enable, disable, test, and understandable connection failure states.
-- [ ] Use secrets-entry controls that do not echo or expose credential values.
+- [x] Add model/provider configuration and model ID entry for OpenAI, Gemini, DeepSeek, and Ollama.
+- [x] Add SQL connection forms for SQLite 3 and PostgreSQL 16+.
+- [x] Add locally hosted Qdrant, Milvus, and ChromaDB settings and Brave Search API settings.
+- [x] Support add, edit, enable, disable, test, and understandable connection failure states.
+- [x] Use secrets-entry controls that do not echo or expose credential values.
 
 ### A5. Approval and action transparency UI — FR-15, FR-27, FR-29, FR-30, NFR-14, NFR-15
 
-- [ ] Present proposed file diffs before edits and identify the exact action(s) in an approval request.
-- [ ] Support one-action approval and explicit batch approval; require renewed review when the proposal changes.
-- [ ] Present deny, revoke, waiting, completed, and failed states accurately.
+- [x] Present proposed file diffs before edits and identify the exact action(s) in an approval request.
+- [x] Support one-action approval and explicit batch approval; require renewed review when the proposal changes.
+- [x] Present deny, revoke, waiting, completed, and failed states accurately.
 - [ ] Explain high-impact actions in user-understandable language.
 
 ### A6. Skills interface — FR-32, FR-33, FR-34
 
-- [ ] Create, view, edit, enable, disable, and delete saved skills.
+- [x] Create, view, edit, enable, disable, and delete saved skills.
 - [ ] Allow explicit skill selection and show when configured skill conditions activate one.
-- [ ] Connect to skill application and persistence contracts.
+- [x] Connect to skill application and persistence contracts.
 
 ### A7. Accessibility and UI acceptance — NFR-16, sections 5.1, 5.5, 5.7, 5.8
 
@@ -168,7 +170,7 @@ Implementation is in progress on the existing `feature/integrations` branch, whi
 - SQLite-backed conversation, skill, and connection repositories with a version-1 schema, per-user default path, and restart persistence.
 - `tests/unit/test_integrations.py` contains offline contract coverage. Ruff format, Ruff lint, source mypy, and the full offline pytest suite passed (23 tests). Live-service checks have not been run.
 
-Still pending: execution of the credential-free contract tests (including mocked PostgreSQL), acceptance against real services, exact model IDs/context windows, query-text embedding selection for vector search, storage encryption/backup and cleanup, and coordination/approval of shared contract changes. The stdlib model transport uses a worker thread to read SSE/NDJSON; cancellation closes its response, but this behavior still needs adapter testing.
+The credential-free adapter and mocked PostgreSQL contract tests have now run as part of the integrated offline suite. Still pending: acceptance against real services, exact model IDs/context windows, query-text embedding selection for vector search, storage encryption/backup and cleanup, and contributor review of shared contract changes. The stdlib model transport uses a worker thread to read SSE/NDJSON; cancellation closes its response, and live cancellation behavior still requires vendor/platform acceptance.
 
 The shared `ModelCompleted.usage` type now allows `None` when a provider does not return usage, matching the S0 contract's documented unknown-usage semantics. This interface change still needs cross-workstream review; contributor agreement is not assumed.
 
@@ -259,7 +261,7 @@ Every functional and non-functional requirement ID appears in one or more owned 
 
 These affect implementation but were not fixed by the requirements answers. Decide them in S0 or the owning task and update context with the decision:
 
-- Desktop GUI framework, application packaging and WSL2 GUI launch approach (A).
+- Desktop framework is PySide6, packaged with the existing uv wheel backend. The normal launcher opens the integrated window; native installers and visible Ubuntu/WSLg acceptance remain Pending (A).
 - Container runtime/profile is selected as Docker Engine/runc with a local Linux daemon and read-only workspace (B); both target-platform acceptance runs remain Pending. See `sandbox_runtime.md`.
 - Internal database is SQLite through Python's standard library; migrations beyond schema version 1, local data encryption/backup design, and cleanup scheduling remain open (C with B for retention).
 - Exact supported model IDs and per-model context windows remain open. Optional connector client ranges are declared in `pyproject.toml` and require adapter compatibility validation (C).

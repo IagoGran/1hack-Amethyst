@@ -22,12 +22,40 @@ CTX = OperationContext("task", "session")
 async def approve(
     engine: ApprovalEngine, actions: tuple[ProposedAction, ...], key: str = "approval"
 ) -> str:
+    """Provide the approve test fixture.
+
+    Parameters
+    ----------
+    engine : ApprovalEngine
+        Approval engine that owns the current task session.
+    actions : tuple[ProposedAction, ...]
+        Actions explicitly included in the approval proposal.
+    key : str
+        Setting, record, or fixture key.
+
+    Returns
+    -------
+    str
+        Text produced by the operation.
+    """
     await engine.request(ApprovalRequest(key, "task", "session", actions))
     await engine.decide(key, granted=True)
     return key
 
 
 def setup(root: Path) -> tuple[ApprovalEngine, PermissionService, Workspace]:
+    """Provide the setup test fixture.
+
+    Parameters
+    ----------
+    root : Path
+        Application-owned data directory or approved workspace root.
+
+    Returns
+    -------
+    tuple[ApprovalEngine, PermissionService, Workspace]
+        Value produced by the operation.
+    """
     engine = ApprovalEngine("session")
     engine.open_task("task")
     permissions = PermissionService("session")
@@ -36,13 +64,46 @@ def setup(root: Path) -> tuple[ApprovalEngine, PermissionService, Workspace]:
 
 
 def action(key: str) -> ProposedAction:
+    """Provide the action test fixture.
+
+    Parameters
+    ----------
+    key : str
+        Setting, record, or fixture key.
+
+    Returns
+    -------
+    ProposedAction
+        Value produced by the operation.
+    """
     return ProposedAction(
         key, "tool", "Run tool", ("resource",), fingerprint({"key": key})
     )
 
 
 def test_approval_batch_consumption_and_revocation() -> None:
+    """Verify approval batch consumption and revocation.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise approval batch consumption and revocation.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         engine = ApprovalEngine("session")
         engine.open_task("task")
         a, b = action("a"), action("b")
@@ -74,7 +135,29 @@ def test_approval_batch_consumption_and_revocation() -> None:
     ],
 )
 def test_approval_scope_failures(mode: str) -> None:
+    """Verify approval scope failures.
+
+    Parameters
+    ----------
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise approval scope failures.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         engine = ApprovalEngine("session")
         engine.open_task("task")
         a = action("a")
@@ -105,7 +188,28 @@ def test_approval_scope_failures(mode: str) -> None:
 
 
 def test_approval_decisions_wait_and_expiry() -> None:
+    """Verify approval decisions wait and expiry.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise approval decisions wait and expiry.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         engine = ApprovalEngine("session")
         engine.open_task("task")
         a = action("a")
@@ -141,6 +245,17 @@ def test_approval_decisions_wait_and_expiry() -> None:
 
 
 def test_read_grants_are_scoped_and_session_limited(tmp_path: Path) -> None:
+    """Verify read grants are scoped and session limited.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
     permissions = PermissionService("session")
     grant = permissions.grant("read", str(tmp_path), recursive=True)
     permissions.require(CTX, "read", str(tmp_path / "file"))
@@ -163,7 +278,29 @@ def test_read_grants_are_scoped_and_session_limited(tmp_path: Path) -> None:
 
 
 def test_workspace_edit_create_delete_and_expired_diff_cleanup(tmp_path: Path) -> None:
+    """Verify workspace edit create delete and expired diff cleanup.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise workspace edit create delete and expired diff cleanup.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         engine, permissions, workspace = setup(tmp_path)
         file = tmp_path / "code.py"
         file.write_text("old\n")
@@ -197,7 +334,31 @@ def test_workspace_edit_create_delete_and_expired_diff_cleanup(tmp_path: Path) -
 
 @pytest.mark.parametrize("mode", ["base", "content", "revoked", "created", "symlink"])
 def test_workspace_invalidated_proposals_never_write(tmp_path: Path, mode: str) -> None:
+    """Verify workspace invalidated proposals never write.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise workspace invalidated proposals never write.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         engine, permissions, workspace = setup(tmp_path)
         file = tmp_path / "file"
         if mode != "created":
@@ -228,6 +389,19 @@ def test_workspace_invalidated_proposals_never_write(tmp_path: Path, mode: str) 
     ["../escape", "/etc/passwd", ".git/config", "a/../../b", "", "a\\b", "a\x00b"],
 )
 def test_workspace_rejects_unsafe_paths(tmp_path: Path, path: str) -> None:
+    """Verify workspace rejects unsafe paths.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    path : str
+        Scoped filesystem location used by the operation.
+
+    Returns
+    -------
+    None
+    """
     _, _, workspace = setup(tmp_path)
     with pytest.raises(ContractError):
         workspace.read(path, CTX)
@@ -236,6 +410,17 @@ def test_workspace_rejects_unsafe_paths(tmp_path: Path, path: str) -> None:
 def test_workspace_symlinks_special_files_size_encoding_and_missing(
     tmp_path: Path,
 ) -> None:
+    """Verify workspace symlinks special files size encoding and missing.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
     _, _, workspace = setup(tmp_path)
     with pytest.raises(ContractError):
         workspace.read("missing", CTX)

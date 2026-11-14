@@ -1,5 +1,6 @@
 """Built-in model provider adapters."""
 
+from amethyst.adapters.models.base import ModelAdapter
 from amethyst.adapters.models.providers import (
     DeepSeekModelProvider,
     GeminiModelProvider,
@@ -8,6 +9,7 @@ from amethyst.adapters.models.providers import (
 )
 
 __all__ = [
+    "ModelAdapter",
     "DeepSeekModelProvider",
     "GeminiModelProvider",
     "OllamaModelProvider",

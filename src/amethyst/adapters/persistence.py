@@ -7,27 +7,25 @@ import json
 import os
 import sqlite3
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
 
+from amethyst.adapters.codecs import (
+    _decode_connection,
+    _decode_conversation,
+    _decode_skill,
+    _encode_conversation,
+    encode_record,
+)
 from amethyst.domain.contracts import (
     Connection,
     ContractError,
     Conversation,
     ErrorCode,
-    JsonValue,
-    Message,
     Skill,
-    ToolCall,
 )
-
-
-class Identified(Protocol):
-    @property
-    def id(self) -> str:
-        """Return the persistent identifier for this record."""
-        ...
+from amethyst.ports.persistence import Identified as Identified
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +36,17 @@ class SQLiteRepositories:
 
 
 def default_database_path() -> Path:
-    """Return the per-user local data path without creating it."""
+    """Return the per-user local data path without creating it.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    Path
+        Value produced by the operation.
+    """
     data_home = os.environ.get("XDG_DATA_HOME")
     root = (
         Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
@@ -94,6 +102,10 @@ class SQLiteRepository[T: Identified]:
         ------
         ValueError
             If ``table`` is not an approved repository table.
+
+        Returns
+        -------
+        None
         """
         if table not in {"conversations", "skills", "connections"}:
             raise ValueError("Unsupported repository table.")
@@ -111,6 +123,10 @@ class SQLiteRepository[T: Identified]:
         -------
         sqlite3.Connection
             Open database connection owned by the caller.
+
+        Parameters
+        ----------
+        None
         """
         connection = sqlite3.connect(self.path, timeout=10.0)
         connection.execute("PRAGMA foreign_keys = ON")
@@ -124,24 +140,25 @@ class SQLiteRepository[T: Identified]:
         ------
         RuntimeError
             If the database schema is newer than this application supports.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
         """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version > 1:
                 raise RuntimeError("Database schema is newer than this application.")
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS conversations "
-                "(id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL)"
-            )
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS skills "
-                "(id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL)"
-            )
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS connections "
-                "(id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL)"
-            )
+            for table in ("conversations", "skills", "connections"):
+                connection.execute(
+                    f"CREATE TABLE IF NOT EXISTS {table} "
+                    "(id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL)"
+                )
             connection.execute("PRAGMA user_version = 1")
         try:
             self.path.chmod(0o600)
@@ -156,6 +173,10 @@ class SQLiteRepository[T: Identified]:
         ----------
         value : T
             Record to persist.
+
+        Returns
+        -------
+        None
         """
         payload = json.dumps(self._encode(value), separators=(",", ":"))
         async with self._lock:
@@ -170,8 +191,12 @@ class SQLiteRepository[T: Identified]:
             Record identifier.
         payload : str
             Serialized record payload.
+
+        Returns
+        -------
+        None
         """
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 f"INSERT INTO {self._table} (id, payload) VALUES (?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
@@ -200,9 +225,24 @@ class SQLiteRepository[T: Identified]:
             raw = await asyncio.to_thread(self._load, item_id)
         if raw is None:
             raise ContractError(ErrorCode.NOT_FOUND, "Record not found.")
+        return self._deserialize(raw)
+
+    def _deserialize(self, raw: str) -> T:
+        """Decode stored JSON and translate corrupt records into a safe failure.
+
+        Parameters
+        ----------
+        raw : str
+            Serialized domain record.
+
+        Returns
+        -------
+        T
+            Detached decoded value.
+        """
         try:
             return self._decode(json.loads(raw))
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        except (KeyError, TypeError, ValueError):
             raise ContractError(
                 ErrorCode.UNAVAILABLE, "Stored record is invalid."
             ) from None
@@ -220,7 +260,7 @@ class SQLiteRepository[T: Identified]:
         str or None
             Stored JSON payload, or ``None`` when no record matches.
         """
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 f"SELECT payload FROM {self._table} WHERE id = ?", (item_id,)
             ).fetchone()
@@ -238,15 +278,14 @@ class SQLiteRepository[T: Identified]:
         ------
         ContractError
             If any stored row cannot be decoded.
+
+        Parameters
+        ----------
+        None
         """
         async with self._lock:
             values = await asyncio.to_thread(self._list)
-        try:
-            return tuple(self._decode(json.loads(value)) for value in values)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            raise ContractError(
-                ErrorCode.UNAVAILABLE, "Stored record is invalid."
-            ) from None
+        return tuple(self._deserialize(value) for value in values)
 
     def _list(self) -> tuple[str, ...]:
         """Read serialized payloads in identifier order.
@@ -255,8 +294,12 @@ class SQLiteRepository[T: Identified]:
         -------
         tuple of str
             Ordered record payloads.
+
+        Parameters
+        ----------
+        None
         """
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 f"SELECT payload FROM {self._table} ORDER BY id"
             ).fetchall()
@@ -269,6 +312,10 @@ class SQLiteRepository[T: Identified]:
         ----------
         item_id : str
             Record identifier.
+
+        Returns
+        -------
+        None
         """
         async with self._lock:
             await asyncio.to_thread(self._delete, item_id)
@@ -280,146 +327,13 @@ class SQLiteRepository[T: Identified]:
         ----------
         item_id : str
             Record identifier.
+
+        Returns
+        -------
+        None
         """
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(f"DELETE FROM {self._table} WHERE id = ?", (item_id,))
-
-
-def _encode_conversation(value: Conversation) -> dict[str, object]:
-    """Serialize a conversation and its ordered messages.
-
-    Parameters
-    ----------
-    value : Conversation
-        Conversation record.
-
-    Returns
-    -------
-    dict
-        JSON-compatible representation.
-    """
-    return {
-        "id": value.id,
-        "title": value.title,
-        "messages": [
-            {
-                "role": message.role,
-                "content": message.content,
-                "tool_call_id": message.tool_call_id,
-                "tool_calls": [asdict(call) for call in message.tool_calls],
-            }
-            for message in value.messages
-        ],
-    }
-
-
-def _decode_conversation(data: dict[str, object]) -> Conversation:
-    """Restore a conversation and nested tool calls from JSON data.
-
-    Parameters
-    ----------
-    data : dict
-        Stored conversation mapping.
-
-    Returns
-    -------
-    Conversation
-        Reconstructed conversation value.
-
-    Raises
-    ------
-    KeyError, TypeError
-        If required fields or nested data have invalid shapes.
-    """
-    raw_messages = data.get("messages", [])
-    if not isinstance(raw_messages, list):
-        raise TypeError("messages must be a list")
-    messages = tuple(
-        Message(
-            role=raw["role"],
-            content=raw["content"],
-            tool_call_id=raw.get("tool_call_id"),
-            tool_calls=tuple(ToolCall(**call) for call in raw.get("tool_calls", [])),
-        )
-        for raw in raw_messages
-    )
-    return Conversation(str(data["id"]), str(data["title"]), messages)
-
-
-def _encode_skill(value: Skill) -> dict[str, object]:
-    """Serialize a saved skill into a JSON-compatible mapping.
-
-    Parameters
-    ----------
-    value : Skill
-        Skill record.
-
-    Returns
-    -------
-    dict
-        Skill fields suitable for JSON encoding.
-    """
-    return asdict(value)
-
-
-def _decode_skill(data: dict[str, object]) -> Skill:
-    """Restore a skill from its stored mapping.
-
-    Parameters
-    ----------
-    data : dict
-        Stored skill fields.
-
-    Returns
-    -------
-    Skill
-        Reconstructed skill value.
-    """
-    return Skill(
-        id=str(data["id"]),
-        name=str(data["name"]),
-        instructions=str(data["instructions"]),
-        enabled=bool(data.get("enabled", True)),
-        condition=cast(str | None, data.get("condition")),
-    )
-
-
-def _encode_connection(value: Connection) -> dict[str, object]:
-    """Serialize non-secret connection settings and credential reference.
-
-    Parameters
-    ----------
-    value : Connection
-        Connection configuration. It contains no credential value.
-
-    Returns
-    -------
-    dict
-        JSON-compatible connection mapping.
-    """
-    return asdict(value)
-
-
-def _decode_connection(data: dict[str, object]) -> Connection:
-    """Restore a connection configuration from stored JSON fields.
-
-    Parameters
-    ----------
-    data : dict
-        Stored connection fields.
-
-    Returns
-    -------
-    Connection
-        Reconstructed connection value.
-    """
-    return Connection(
-        id=str(data["id"]),
-        kind=str(data["kind"]),
-        options=cast(dict[str, JsonValue], data["options"]),
-        enabled=bool(data.get("enabled", True)),
-        credential_ref=cast(str | None, data.get("credential_ref")),
-    )
 
 
 class SQLiteConversationRepository(SQLiteRepository[Conversation]):
@@ -430,6 +344,10 @@ class SQLiteConversationRepository(SQLiteRepository[Conversation]):
         ----------
         path : str or pathlib.Path
             Application database location.
+
+        Returns
+        -------
+        None
         """
         super().__init__(
             path, "conversations", _encode_conversation, _decode_conversation
@@ -444,8 +362,12 @@ class SQLiteSkillRepository(SQLiteRepository[Skill]):
         ----------
         path : str or pathlib.Path
             Application database location.
+
+        Returns
+        -------
+        None
         """
-        super().__init__(path, "skills", _encode_skill, _decode_skill)
+        super().__init__(path, "skills", encode_record, _decode_skill)
 
 
 class SQLiteConnectionRepository(SQLiteRepository[Connection]):
@@ -456,5 +378,9 @@ class SQLiteConnectionRepository(SQLiteRepository[Connection]):
         ----------
         path : str or pathlib.Path
             Application database location.
+
+        Returns
+        -------
+        None
         """
-        super().__init__(path, "connections", _encode_connection, _decode_connection)
+        super().__init__(path, "connections", encode_record, _decode_connection)

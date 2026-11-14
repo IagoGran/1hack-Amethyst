@@ -34,59 +34,112 @@ class BaseSidebarButton(QPushButton):
     """Share accessible naming and sidebar button defaults."""
 
     def __init__(self, label: str, parent: QWidget | None = None) -> None:
-        """Create a text button with an accessible name."""
+        """Create a text button with an accessible name.
+
+        Parameters
+        ----------
+        label : str
+            Visible control text.
+        parent : QWidget | None
+            Owning widget, descriptor, or temporary-data directory.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(label, parent)
         self.setAccessibleName(label.replace("◈", "").strip())
+
+    def set_active(self, active: bool) -> None:
+        """Update the selected state used by keyboard and visual styling.
+
+        Parameters
+        ----------
+        active : bool
+            Whether the control is selected.
+
+        Returns
+        -------
+        None
+        """
+        self.setChecked(active)
+        self.setProperty("active", "true" if active else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class NavigationButton(BaseSidebarButton):
     """Represent one selectable page in the sidebar."""
 
     def __init__(self, page: str, icon: str, parent: QWidget | None = None) -> None:
-        """Create a checkable navigation button for a page."""
+        """Create a checkable navigation button for a page.
+
+        Parameters
+        ----------
+        page : str
+            Settings page populated by the test fixture.
+        icon : str
+            Navigation icon text.
+        parent : QWidget | None
+            Owning widget, descriptor, or temporary-data directory.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(f"{icon}   {page}", parent)
         self.page = page
-        self.icon = icon
+        self.icon_text = icon
         self.setObjectName("nav")
         self.setCheckable(True)
         self.setAccessibleName(f"Open {page}")
 
     def set_collapsed(self, collapsed: bool) -> None:
-        """Show only the navigation icon while the sidebar is collapsed."""
-        label = self.icon if collapsed else f"{self.icon}   {self.page}"
+        """Show only the navigation icon while the sidebar is collapsed.
+
+        Parameters
+        ----------
+        collapsed : bool
+            Whether the sidebar should use its compact layout.
+
+        Returns
+        -------
+        None
+        """
+        label = self.icon_text if collapsed else f"{self.icon_text}   {self.page}"
         self.setText(label)
         self.setProperty("collapsed", collapsed)
         self.style().unpolish(self)
         self.style().polish(self)
 
-    def set_active(self, active: bool) -> None:
-        """Update the selected state used by keyboard and visual styling."""
-        self.setChecked(active)
-        self.setProperty("active", "true" if active else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
 
-
-class RecentConversationButton(BaseSidebarButton):
-    """Show a non-persistent conversation example in preview mode."""
+class ConversationButton(BaseSidebarButton):
+    """Show a saved conversation in the sidebar."""
 
     def __init__(
         self, title: str, conversation_id: str, parent: QWidget | None = None
     ) -> None:
-        """Create a sidebar item labeled as a preview conversation."""
+        """Create a sidebar item for a saved conversation.
+
+        Parameters
+        ----------
+        title : str
+            Human-readable conversation or page title.
+        conversation_id : str
+            Persistent conversation identifier.
+        parent : QWidget | None
+            Owning widget, descriptor, or temporary-data directory.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(title, parent)
         self.conversation_id = conversation_id
         self.setObjectName("recent")
-        self.setAccessibleName(f"Preview conversation: {title}")
+        self.setAccessibleName(f"Open conversation: {title}")
         self.setCheckable(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-
-    def set_active(self, active: bool) -> None:
-        """Highlight this conversation when it is open in the chat."""
-        self.setChecked(active)
-        self.setProperty("active", "true" if active else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
 
 
 class NavigationSidebar(QWidget):
@@ -98,14 +151,24 @@ class NavigationSidebar(QWidget):
     delete_conversation_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Build the sidebar and connect its controls to navigation signals."""
+        """Build the sidebar and connect its controls to navigation signals.
+
+        Parameters
+        ----------
+        parent : QWidget | None
+            Owning widget, descriptor, or temporary-data directory.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setFixedWidth(232)
         self._is_pinned = True
         self._is_collapsed = False
         self._buttons: dict[str, NavigationButton] = {}
-        self._conversation_buttons: dict[str, list[RecentConversationButton]] = {}
+        self._conversation_buttons: dict[str, list[ConversationButton]] = {}
         self._active_conversation_id: str | None = None
         self._build_content()
         self._build_resize_animation()
@@ -114,7 +177,16 @@ class NavigationSidebar(QWidget):
             child.installEventFilter(self)
 
     def _build_content(self) -> None:
-        """Add branding, navigation, recent examples, and local profile."""
+        """Add branding, navigation, recent examples, and local profile.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         layout = QVBoxLayout(self)
         self._layout = layout
         layout.setContentsMargins(16, 18, 16, 14)
@@ -129,7 +201,16 @@ class NavigationSidebar(QWidget):
         layout.addWidget(self._profile)
 
     def _build_resize_animation(self) -> None:
-        """Prepare a synchronized easing animation for both sidebar width limits."""
+        """Prepare a synchronized easing animation for both sidebar width limits.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self._resize_animation = QParallelAnimationGroup(self)
         self._width_animations: list[QPropertyAnimation] = []
         for property_name in (b"minimumWidth", b"maximumWidth"):
@@ -141,7 +222,17 @@ class NavigationSidebar(QWidget):
         self._resize_animation.finished.connect(self._finish_width_animation)
 
     def _add_brand(self, layout: QVBoxLayout) -> None:
-        """Add the Amethyst wordmark and product descriptor."""
+        """Add the Amethyst wordmark and product descriptor.
+
+        Parameters
+        ----------
+        layout : QVBoxLayout
+            Owning Qt layout.
+
+        Returns
+        -------
+        None
+        """
         brand = QHBoxLayout()
         self._brand_layout = brand
         brand.setContentsMargins(0, 0, 0, 0)
@@ -179,7 +270,17 @@ class NavigationSidebar(QWidget):
         layout.addLayout(brand)
 
     def _add_sidebar_mode(self, layout: QVBoxLayout) -> None:
-        """Add the text control that pins or collapses the sidebar."""
+        """Add the text control that pins or collapses the sidebar.
+
+        Parameters
+        ----------
+        layout : QVBoxLayout
+            Owning Qt layout.
+
+        Returns
+        -------
+        None
+        """
         self._pin_button = QToolButton()
         self._pin_button.setObjectName("sidebarMode")
         self._pin_button.setCheckable(True)
@@ -191,7 +292,17 @@ class NavigationSidebar(QWidget):
         layout.addWidget(self._pin_button)
 
     def _add_new_conversation(self, layout: QVBoxLayout) -> None:
-        """Add the action that resets the preview conversation."""
+        """Add the action that starts a new conversation.
+
+        Parameters
+        ----------
+        layout : QVBoxLayout
+            Owning Qt layout.
+
+        Returns
+        -------
+        None
+        """
         button = QPushButton("＋   New conversation")
         button.setObjectName("newConversation")
         button.setAccessibleName("Start a new conversation")
@@ -200,7 +311,17 @@ class NavigationSidebar(QWidget):
         layout.addWidget(button)
 
     def _add_navigation(self, layout: QVBoxLayout) -> None:
-        """Create page buttons and emit their selected page names."""
+        """Create page buttons and emit their selected page names.
+
+        Parameters
+        ----------
+        layout : QVBoxLayout
+            Owning Qt layout.
+
+        Returns
+        -------
+        None
+        """
         section = QLabel("WORKSPACE")
         section.setObjectName("eyebrow")
         section.setContentsMargins(6, 12, 0, 0)
@@ -220,7 +341,17 @@ class NavigationSidebar(QWidget):
             layout.addWidget(button)
 
     def _add_conversation_sections(self, layout: QVBoxLayout) -> None:
-        """Build recent chats and a collapsible list of all saved chats."""
+        """Build recent chats and a collapsible list of all saved chats.
+
+        Parameters
+        ----------
+        layout : QVBoxLayout
+            Owning Qt layout.
+
+        Returns
+        -------
+        None
+        """
         container = QWidget()
         container.setObjectName("recentSection")
         section_layout = QVBoxLayout(container)
@@ -269,20 +400,62 @@ class NavigationSidebar(QWidget):
         layout.addWidget(self._all_chats_scroll, 1)
 
     def _request_page(self, page: str, checked: bool = False) -> None:
-        """Emit the selected page while discarding Qt's checked-state value."""
+        """Emit the selected page while discarding Qt's checked-state value.
+
+        Parameters
+        ----------
+        page : str
+            Settings page populated by the test fixture.
+        checked : bool
+            Checked state emitted by the Qt control.
+
+        Returns
+        -------
+        None
+        """
         self.page_requested.emit(page)
 
     def _request_new_conversation(self, checked: bool = False) -> None:
-        """Emit the new-conversation signal without forwarding button state."""
+        """Emit the new-conversation signal without forwarding button state.
+
+        Parameters
+        ----------
+        checked : bool
+            Checked state emitted by the Qt control.
+
+        Returns
+        -------
+        None
+        """
         self.new_conversation_requested.emit()
 
     def set_active_page(self, page: str) -> None:
-        """Highlight the currently selected page in the navigation list."""
+        """Highlight the currently selected page in the navigation list.
+
+        Parameters
+        ----------
+        page : str
+            Settings page populated by the test fixture.
+
+        Returns
+        -------
+        None
+        """
         for name, button in self._buttons.items():
             button.set_active(name == page)
 
     def set_conversations(self, values: tuple[Conversation, ...]) -> None:
-        """Refresh recent and all-chat lists from saved conversations."""
+        """Refresh recent and all-chat lists from saved conversations.
+
+        Parameters
+        ----------
+        values : tuple[Conversation, ...]
+            Ordered fixture or record values.
+
+        Returns
+        -------
+        None
+        """
         self._recent_status.setVisible(not values)
         self._recent_status.setText("No saved conversations" if not values else "")
         self._clear_conversation_buttons()
@@ -298,9 +471,20 @@ class NavigationSidebar(QWidget):
 
     def _make_conversation_button(
         self, conversation: Conversation
-    ) -> RecentConversationButton:
-        """Create a selectable chat row with a context-menu delete action."""
-        button = RecentConversationButton(conversation.title, conversation.id)
+    ) -> ConversationButton:
+        """Create a selectable chat row with a context-menu delete action.
+
+        Parameters
+        ----------
+        conversation : Conversation
+            Detached conversation snapshot.
+
+        Returns
+        -------
+        ConversationButton
+            Value produced by the operation.
+        """
+        button = ConversationButton(conversation.title, conversation.id)
         button.clicked.connect(
             partial(self._request_recent_conversation, conversation.id)
         )
@@ -311,7 +495,16 @@ class NavigationSidebar(QWidget):
         return button
 
     def _clear_conversation_buttons(self) -> None:
-        """Remove prior conversation rows before refreshing both lists."""
+        """Remove prior conversation rows before refreshing both lists.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         for buttons in self._conversation_buttons.values():
             for button in buttons:
                 self._recent_layout.removeWidget(button)
@@ -321,18 +514,42 @@ class NavigationSidebar(QWidget):
 
     def _show_conversation_menu(
         self,
-        button: RecentConversationButton,
+        button: ConversationButton,
         conversation_id: str,
         position: QPoint,
     ) -> None:
-        """Offer deletion for a saved conversation from either sidebar list."""
+        """Offer deletion for a saved conversation from either sidebar list.
+
+        Parameters
+        ----------
+        button : ConversationButton
+            Control whose state is being updated.
+        conversation_id : str
+            Persistent conversation identifier.
+        position : QPoint
+            Widget-relative position of the requested action.
+
+        Returns
+        -------
+        None
+        """
         menu = QMenu(button)
         delete_action = menu.addAction("Delete chat")
         if menu.exec(button.mapToGlobal(position)) == delete_action:
             self.delete_conversation_requested.emit(conversation_id)
 
     def _set_all_chats_expanded(self, expanded: bool) -> None:
-        """Expand or collapse the all-chats list and update its accessible label."""
+        """Expand or collapse the all-chats list and update its accessible label.
+
+        Parameters
+        ----------
+        expanded : bool
+            Whether the control's expanded content is visible.
+
+        Returns
+        -------
+        None
+        """
         self._all_chats_scroll.setVisible(expanded)
         label = "ALL CHATS  ▾" if expanded else "ALL CHATS  ▸"
         self._all_chats_toggle.setText(label)
@@ -341,14 +558,34 @@ class NavigationSidebar(QWidget):
         )
 
     def set_active_conversation(self, conversation_id: str | None) -> None:
-        """Highlight the open chat in both recent and all-chat lists."""
+        """Highlight the open chat in both recent and all-chat lists.
+
+        Parameters
+        ----------
+        conversation_id : str | None
+            Persistent conversation identifier.
+
+        Returns
+        -------
+        None
+        """
         self._active_conversation_id = conversation_id
         for item_id, buttons in self._conversation_buttons.items():
             for button in buttons:
                 button.set_active(item_id == conversation_id)
 
     def show_deleted(self, conversation_id: str) -> None:
-        """Confirm deletion when the recent-chat list becomes empty."""
+        """Confirm deletion when the recent-chat list becomes empty.
+
+        Parameters
+        ----------
+        conversation_id : str
+            Persistent conversation identifier.
+
+        Returns
+        -------
+        None
+        """
         if not self._conversation_buttons:
             self._recent_status.setText("Chat deleted")
             self._recent_status.setVisible(True)
@@ -356,11 +593,36 @@ class NavigationSidebar(QWidget):
     def _request_recent_conversation(
         self, conversation_id: str, checked: bool = False
     ) -> None:
-        """Open the selected conversation directly from the sidebar."""
+        """Open the selected conversation directly from the sidebar.
+
+        Parameters
+        ----------
+        conversation_id : str
+            Persistent conversation identifier.
+        checked : bool
+            Checked state emitted by the Qt control.
+
+        Returns
+        -------
+        None
+        """
         self.recent_conversation_requested.emit(conversation_id)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """Expand on hover and collapse after the pointer leaves the sidebar."""
+        """Expand on hover and collapse after the pointer leaves the sidebar.
+
+        Parameters
+        ----------
+        watched : QObject
+            Qt object receiving the filtered event.
+        event : QEvent
+            Typed event delivered to the operation.
+
+        Returns
+        -------
+        bool
+            Whether the stated condition holds.
+        """
         if not self._is_pinned and event.type() == QEvent.Type.Enter:
             self._set_collapsed(False)
         elif not self._is_pinned and event.type() == QEvent.Type.Leave:
@@ -368,12 +630,32 @@ class NavigationSidebar(QWidget):
         return super().eventFilter(watched, event)
 
     def _toggle_pinned(self, pinned: bool) -> None:
-        """Pin the sidebar open or return it to hover-to-expand behavior."""
+        """Pin the sidebar open or return it to hover-to-expand behavior.
+
+        Parameters
+        ----------
+        pinned : bool
+            Whether the sidebar remains open after the pointer leaves.
+
+        Returns
+        -------
+        None
+        """
         self._is_pinned = pinned
         self._set_collapsed(not pinned)
 
     def _set_collapsed(self, collapsed: bool) -> None:
-        """Ease between the full sidebar and its compact hover rail."""
+        """Ease between the full sidebar and its compact hover rail.
+
+        Parameters
+        ----------
+        collapsed : bool
+            Whether the sidebar should use its compact layout.
+
+        Returns
+        -------
+        None
+        """
         target_width = 76 if collapsed else 232
         if (
             collapsed == self._is_collapsed
@@ -405,7 +687,17 @@ class NavigationSidebar(QWidget):
         self._resize_animation.start()
 
     def _apply_sidebar_state(self, collapsed: bool) -> None:
-        """Arrange labels and actions for either expanded or compact navigation."""
+        """Arrange labels and actions for either expanded or compact navigation.
+
+        Parameters
+        ----------
+        collapsed : bool
+            Whether the sidebar should use its compact layout.
+
+        Returns
+        -------
+        None
+        """
         margin = 8 if collapsed else 16
         self._layout.setContentsMargins(margin, 18, margin, 14)
         self._brand_layout.setSpacing(2 if collapsed else 8)
@@ -425,7 +717,16 @@ class NavigationSidebar(QWidget):
         self._update_mode_button()
 
     def _update_mode_button(self) -> None:
-        """Use ordinary words to explain the sidebar's next manual action."""
+        """Use ordinary words to explain the sidebar's next manual action.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         if self._is_collapsed:
             text, label = "Open", "Open and pin sidebar"
         elif self._is_pinned:
@@ -437,11 +738,29 @@ class NavigationSidebar(QWidget):
         self._pin_button.setToolTip(label)
 
     def _finish_width_animation(self) -> None:
-        """Reveal full labels only after the sidebar reaches expanded width."""
+        """Reveal full labels only after the sidebar reaches expanded width.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self._apply_sidebar_state(self._is_collapsed)
 
     def _collapse_if_pointer_left(self) -> None:
-        """Collapse only when an unpinned sidebar no longer contains the cursor."""
+        """Collapse only when an unpinned sidebar no longer contains the cursor.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         cursor_position = self.mapFromGlobal(QCursor.pos())
         if not self._is_pinned and not self.rect().contains(cursor_position):
             self._set_collapsed(True)

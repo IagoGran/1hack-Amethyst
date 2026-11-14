@@ -9,6 +9,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, cast
 
+from amethyst.adapters.http import retry_after as _retry_after
+from amethyst.adapters.tools.base import Tool
 from amethyst.domain.contracts import (
     ConnectionHealth,
     ContractError,
@@ -21,7 +23,7 @@ from amethyst.domain.contracts import (
 )
 
 
-class BraveSearchTool:
+class BraveSearchTool(Tool):
     def __init__(
         self,
         api_key: str,
@@ -39,6 +41,10 @@ class BraveSearchTool:
             Brave Search API endpoint.
         max_results : int, optional
             Maximum result count exposed to tool calls.
+
+        Returns
+        -------
+        None
         """
         self._api_key = api_key
         self._endpoint = endpoint
@@ -52,6 +58,10 @@ class BraveSearchTool:
         -------
         ToolDefinition
             Search query schema.
+
+        Parameters
+        ----------
+        None
         """
         return ToolDefinition(
             "web.brave.search",
@@ -173,28 +183,8 @@ class BraveSearchTool:
             description = str(item.get("description", ""))
             items.append({"title": title, "description": description, "url": url})
             sources.append(Source(identifier=url, title=title, url=url))
-        raw = json.dumps(items, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        byte_truncated = len(raw) > max(0, output_limit)
-        if byte_truncated:
-            items = []
-            sources = []
-            for item in json.loads(raw):
-                candidate = json.dumps(
-                    [*items, item], ensure_ascii=False, separators=(",", ":")
-                )
-                if len(candidate.encode("utf-8")) > output_limit:
-                    break
-                items.append(item)
-                sources.append(
-                    Source(identifier=item["url"], title=item["title"], url=item["url"])
-                )
-        return ToolResult(
-            call_id,
-            json.dumps(items, ensure_ascii=False),
-            tuple(sources),
-            truncated or byte_truncated,
+        return self._records_result(
+            call_id, items, sources, output_limit, truncated=truncated
         )
 
     def _request(self, query: str, count: int, timeout: float) -> dict[str, Any]:
@@ -273,24 +263,3 @@ class BraveSearchTool:
                 False, "Brave Search is unavailable.", ErrorCode.UNAVAILABLE
             )
         return ConnectionHealth(True, "Brave Search connection is available.")
-
-
-def _retry_after(value: str | None) -> float | None:
-    """Parse a numeric Retry-After header into non-negative seconds.
-
-    Parameters
-    ----------
-    value : str or None
-        Provider retry delay header.
-
-    Returns
-    -------
-    float or None
-        Parsed delay, or ``None`` for missing or invalid values.
-    """
-    if value is None:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        return None

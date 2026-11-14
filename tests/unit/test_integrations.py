@@ -4,11 +4,11 @@ import asyncio
 import json
 import sqlite3
 import sys
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
 
-from amethyst.adapters.fakes import InMemoryRepository, MemoryCredentialStore
 from amethyst.adapters.models import (
     DeepSeekModelProvider,
     GeminiModelProvider,
@@ -48,6 +48,13 @@ from amethyst.domain.contracts import (
     ToolCall,
     Usage,
 )
+from tests.support.fakes import InMemoryRepository, MemoryCredentialStore
+from tests.support.integrations import (
+    ChromaClient,
+    MilvusClient,
+    PostgreSQLConnection,
+    QdrantClient,
+)
 
 CONTEXT = OperationContext(
     "task", "session", timeout_seconds=3, output_limit_bytes=4_096
@@ -55,7 +62,29 @@ CONTEXT = OperationContext(
 
 
 def test_sqlite_repositories_survive_reopen_and_keep_snapshots(tmp_path) -> None:
+    """Verify sqlite repositories survive reopen and keep snapshots.
+
+    Parameters
+    ----------
+    tmp_path : object
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise sqlite repositories survive reopen and keep snapshots.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         database = tmp_path / "amethyst.db"
         conversations = SQLiteConversationRepository(database)
         await conversations.save(
@@ -87,9 +116,31 @@ def test_sqlite_repositories_survive_reopen_and_keep_snapshots(tmp_path) -> None
 
 
 def test_sqlite_adapter_is_read_only_and_bounded(tmp_path) -> None:
+    """Verify sqlite adapter is read only and bounded.
+
+    Parameters
+    ----------
+    tmp_path : object
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise sqlite adapter is read only and bounded.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         path = tmp_path / "source.db"
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("CREATE TABLE records (id INTEGER, value TEXT)")
             connection.executemany(
                 "INSERT INTO records VALUES (?, ?)", [(1, "one"), (2, "two")]
@@ -121,7 +172,33 @@ def test_sqlite_adapter_is_read_only_and_bounded(tmp_path) -> None:
 
 
 def test_openai_and_deepseek_stream_and_decode_tool_calls(monkeypatch) -> None:
+    """Verify openai and deepseek stream and decode tool calls.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
+
     async def fake_stream(*args, **kwargs):
+        """Exercise openai and deepseek stream and decode tool calls.
+
+        Parameters
+        ----------
+        *args : object
+            Positional arguments forwarded to the boundary.
+        **kwargs : object
+            Keyword arguments forwarded to the boundary.
+
+        Yields
+        ------
+        object
+            Ordered values produced by the operation.
+        """
         yield {"choices": [{"delta": {"content": "hello"}, "finish_reason": None}]}
         yield {
             "choices": [
@@ -151,9 +228,21 @@ def test_openai_and_deepseek_stream_and_decode_tool_calls(monkeypatch) -> None:
             "usage": {"prompt_tokens": 2, "completion_tokens": 3},
         }
 
-    monkeypatch.setattr("amethyst.adapters.models.providers.stream_json", fake_stream)
+    monkeypatch.setattr(
+        "amethyst.adapters.models.chat_completions.stream_json", fake_stream
+    )
 
     async def scenario() -> None:
+        """Exercise openai and deepseek stream and decode tool calls.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         request = ModelRequest("fixture-model", (Message("user", "Hi"),))
         for provider in (
             OpenAIModelProvider("secret"),
@@ -169,15 +258,51 @@ def test_openai_and_deepseek_stream_and_decode_tool_calls(monkeypatch) -> None:
 
 
 def test_gemini_streams_text_and_usage(monkeypatch) -> None:
+    """Verify gemini streams text and usage.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
+
     async def fake_stream(*args, **kwargs):
+        """Exercise gemini streams text and usage.
+
+        Parameters
+        ----------
+        *args : object
+            Positional arguments forwarded to the boundary.
+        **kwargs : object
+            Keyword arguments forwarded to the boundary.
+
+        Yields
+        ------
+        object
+            Ordered values produced by the operation.
+        """
         yield {
             "candidates": [{"content": {"parts": [{"text": "Hi"}]}}],
             "usageMetadata": {"promptTokenCount": 4, "candidatesTokenCount": 1},
         }
 
-    monkeypatch.setattr("amethyst.adapters.models.providers.stream_json", fake_stream)
+    monkeypatch.setattr("amethyst.adapters.models.gemini.stream_json", fake_stream)
 
     async def scenario() -> None:
+        """Exercise gemini streams text and usage.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         provider = GeminiModelProvider("secret")
         events = [
             event
@@ -191,7 +316,33 @@ def test_gemini_streams_text_and_usage(monkeypatch) -> None:
 
 
 def test_ollama_streams_ndjson_tool_call(monkeypatch) -> None:
+    """Verify ollama streams ndjson tool call.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
+
     async def fake_stream(*args, **kwargs):
+        """Exercise ollama streams ndjson tool call.
+
+        Parameters
+        ----------
+        *args : object
+            Positional arguments forwarded to the boundary.
+        **kwargs : object
+            Keyword arguments forwarded to the boundary.
+
+        Yields
+        ------
+        object
+            Ordered values produced by the operation.
+        """
         yield {
             "message": {
                 "tool_calls": [{"function": {"name": "lookup", "arguments": {"id": 7}}}]
@@ -201,9 +352,21 @@ def test_ollama_streams_ndjson_tool_call(monkeypatch) -> None:
             "eval_count": 2,
         }
 
-    monkeypatch.setattr("amethyst.adapters.models.providers.stream_json", fake_stream)
+    monkeypatch.setattr(
+        "amethyst.adapters.models.chat_completions.stream_json", fake_stream
+    )
 
     async def scenario() -> None:
+        """Exercise ollama streams ndjson tool call.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         provider = OllamaModelProvider()
         events = [
             event
@@ -219,6 +382,17 @@ def test_ollama_streams_ndjson_tool_call(monkeypatch) -> None:
 
 
 def test_brave_search_bounds_results_and_preserves_sources(monkeypatch) -> None:
+    """Verify brave search bounds results and preserves sources.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
     tool = BraveSearchTool("fixture-secret", max_results=1)
     monkeypatch.setattr(
         tool,
@@ -242,6 +416,16 @@ def test_brave_search_bounds_results_and_preserves_sources(monkeypatch) -> None:
     )
 
     async def scenario() -> None:
+        """Exercise brave search bounds results and preserves sources.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         result = await tool.execute(
             ToolCall("search", tool.definition.name, {"query": "fixture", "count": 8}),
             CONTEXT,
@@ -254,49 +438,28 @@ def test_brave_search_bounds_results_and_preserves_sources(monkeypatch) -> None:
 
 
 def test_vector_adapters_preserve_source_and_limit_output() -> None:
-    class QdrantClient:
-        def query_points(self, **kwargs):
-            return SimpleNamespace(
-                points=[
-                    SimpleNamespace(
-                        id="q1", payload={"text": "match", "url": "https://source.test"}
-                    )
-                ]
-            )
+    """Verify vector adapters preserve source and limit output.
 
-        def get_collection(self, collection):
-            return object()
+    Parameters
+    ----------
+    None
 
-    class ChromaCollection:
-        def query(self, **kwargs):
-            return {
-                "ids": [["c1"]],
-                "documents": [["match"]],
-                "metadatas": [[{"title": "Source"}]],
-            }
-
-        def count(self):
-            return 1
-
-    class ChromaClient:
-        def get_collection(self, name):
-            return ChromaCollection()
-
-    class MilvusClient:
-        def search(self, **kwargs):
-            return [
-                [
-                    {
-                        "id": "m1",
-                        "entity": {"text": "match", "url": "https://source.test"},
-                    }
-                ]
-            ]
-
-        def describe_collection(self, name):
-            return object()
+    Returns
+    -------
+    None
+    """
 
     async def scenario() -> None:
+        """Exercise vector adapters preserve source and limit output.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         for tool in (
             QdrantTool("collection", QdrantClient()),
             ChromaTool("collection", ChromaClient()),
@@ -310,15 +473,51 @@ def test_vector_adapters_preserve_source_and_limit_output() -> None:
             )
             assert json.loads(result.content)[0]["text"] == "match"
             assert result.sources[0].identifier
+            assert (await tool.test_connection(CONTEXT)).available
 
     asyncio.run(scenario())
 
 
 def test_postgresql_adapter_fails_clearly_without_optional_driver(monkeypatch) -> None:
+    """Verify postgresql adapter fails clearly without optional driver.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise postgresql adapter fails clearly without optional driver.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         tool = PostgreSQLReadOnlyTool("postgresql://fixture")
 
         def no_driver(*args, **kwargs):
+            """Exercise postgresql adapter fails clearly without optional driver.
+
+            Parameters
+            ----------
+            *args : object
+                Positional arguments forwarded to the boundary.
+            **kwargs : object
+                Keyword arguments forwarded to the boundary.
+
+            Returns
+            -------
+            None
+            """
             raise ImportError("optional driver is absent")
 
         monkeypatch.setattr(tool, "_query", no_driver)
@@ -333,42 +532,25 @@ def test_postgresql_adapter_fails_clearly_without_optional_driver(monkeypatch) -
 
 
 def test_postgresql_adapter_starts_a_read_only_transaction(monkeypatch) -> None:
-    statements = []
+    """Verify postgresql adapter starts a read only transaction.
 
-    class Cursor:
-        description = None
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest fixture for temporary dependency replacements.
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def execute(self, statement, params=None):
-            statements.append(statement)
-            if statement == "SELECT 1":
-                self.description = (SimpleNamespace(name="value"),)
-
-        def fetchmany(self, limit):
-            return [(1,)]
-
-    class Connection:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def cursor(self):
-            return Cursor()
-
-        def execute(self, statement, params=None):
-            statements.append(statement)
+    Returns
+    -------
+    None
+    """
+    statements: list[str] = []
 
     monkeypatch.setitem(
         sys.modules,
         "psycopg",
-        SimpleNamespace(connect=lambda *args, **kwargs: Connection()),
+        SimpleNamespace(
+            connect=lambda *args, **kwargs: PostgreSQLConnection(statements)
+        ),
     )
     tool = PostgreSQLReadOnlyTool("postgresql://fixture")
     rows, columns, truncated = tool._query("SELECT 1", 1_024, 3)
@@ -380,6 +562,16 @@ def test_postgresql_adapter_starts_a_read_only_transaction(monkeypatch) -> None:
 
 
 def test_connection_validation_keeps_secrets_out_of_configuration() -> None:
+    """Verify connection validation keeps secrets out of configuration.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
     connection = Connection(
         "openai",
         "openai",
@@ -395,6 +587,16 @@ def test_connection_validation_keeps_secrets_out_of_configuration() -> None:
     assert rejected.value.code == ErrorCode.INVALID_INPUT
 
     async def scenario() -> None:
+        """Exercise connection validation keeps secrets out of configuration.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         credentials = MemoryCredentialStore()
         await credentials.set("openai-key", "fixture-secret")
         provider = await create_model_provider(connection, credentials)
@@ -413,7 +615,28 @@ def test_connection_validation_keeps_secrets_out_of_configuration() -> None:
 
 
 def test_connection_service_crud_and_disabled_health() -> None:
+    """Verify connection service crud and disabled health.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise connection service crud and disabled health.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         repository = InMemoryRepository[Connection]()
         service = ConnectionService(repository, MemoryCredentialStore())
         connection = Connection(

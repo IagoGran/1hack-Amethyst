@@ -24,3 +24,21 @@ class Task:
     request: str
     status: TaskStatus = TaskStatus.PENDING
     conversation_id: str = ""
+
+
+TERMINAL_STATUSES = frozenset(
+    {
+        TaskStatus.COMPLETED,
+        TaskStatus.CANCELLED,
+        TaskStatus.FAILED,
+    }
+)
+TASK_STATUS_LABELS = {
+    TaskStatus.PENDING: "Pending",
+    TaskStatus.RUNNING: "Running",
+    TaskStatus.AWAITING_APPROVAL: "Awaiting approval",
+    TaskStatus.PAUSED_FOR_BUDGET: "Paused for budget",
+    TaskStatus.COMPLETED: "Completed",
+    TaskStatus.CANCELLED: "Cancelled",
+    TaskStatus.FAILED: "Failed",
+}

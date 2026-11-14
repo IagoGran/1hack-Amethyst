@@ -10,7 +10,7 @@ The interfaces below are concrete, reviewable S0 proposals implemented as the de
 
 ## Skeleton review
 
-At the starting commit `e85472e`, the package contained a minimal `Task`, synchronous `ModelProvider.complete(prompt)` and `AgentTool.execute(input_data)` protocols, empty integration modules, and a print-only launcher. There was no persistence implementation, GUI, sandbox, or executable test suite. `src/llm/agent.py` was empty; it is left in place pending migration/removal.
+At the starting commit `e85472e`, the package contained a minimal `Task`, synchronous `ModelProvider.complete(prompt)` and `AgentTool.execute(input_data)` protocols, empty integration modules, and a print-only launcher. There was no persistence implementation, GUI, sandbox, or executable test suite. `src/llm/agent.py` was empty; it has since been removed during the repository-wide refactor.
 
 The distribution and CLI remain `1hack-amethyst`. The Python package is now `amethyst` under `src/amethyst/`: the previous `1hack_amethyst` name could be loaded dynamically but could not appear in normal Python import syntax. `pyproject.toml` explicitly maps the distribution to the importable package. The CLI remains a clearly labeled provisional startup, not a desktop implementation.
 
@@ -64,7 +64,7 @@ Shared values live in `domain/contracts.py`; task snapshots and status values li
 ## Independent workstream usage
 
 ```python
-from amethyst.adapters.fakes import FakeApplicationService, InMemoryRepository
+from tests.support.fakes import FakeApplicationService, InMemoryRepository
 from amethyst.domain.contracts import Conversation, StartTask
 from amethyst.ports.application import ApplicationService
 from amethyst.ports.persistence import ConversationRepository

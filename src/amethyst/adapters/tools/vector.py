@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import math
 from typing import Any, cast
 
+from amethyst.adapters.tools.base import Tool
 from amethyst.domain.contracts import (
     ConnectionHealth,
     ContractError,
@@ -23,7 +23,7 @@ MAX_CHUNKS = 8
 MAX_CHUNK_CHARS = 1_000
 
 
-class _VectorTool:
+class _VectorTool(Tool):
     name = "vector.query"
     description = "Retrieve relevant records from the configured vector collection."
 
@@ -36,6 +36,10 @@ class _VectorTool:
             Vector-store collection name.
         max_chunks : int, optional
             Maximum records returned for one query.
+
+        Returns
+        -------
+        None
         """
         self.collection = collection
         self.max_chunks = min(max(1, max_chunks), MAX_CHUNKS)
@@ -48,6 +52,10 @@ class _VectorTool:
         -------
         ToolDefinition
             Query schema requiring a numeric vector.
+
+        Parameters
+        ----------
+        None
         """
         return ToolDefinition(
             self.name,
@@ -141,26 +149,8 @@ class _VectorTool:
             sources.append(Source(source_id, title, str(url) if url else None))
         if len(records) > limit:
             truncated = True
-        # Truncate only at record boundaries to keep valid JSON and matching sources.
-        kept: list[dict[str, Any]] = []
-        kept_sources: list[Source] = []
-        for item, source in zip(selected, sources, strict=True):
-            candidate = json.dumps(
-                [*kept, item],
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
-            )
-            if len(candidate.encode("utf-8")) > output_limit:
-                truncated = True
-                break
-            kept.append(item)
-            kept_sources.append(source)
-        return ToolResult(
-            call_id,
-            json.dumps(kept, ensure_ascii=False, separators=(",", ":"), default=str),
-            tuple(kept_sources),
-            truncated,
+        return self._records_result(
+            call_id, selected, sources, output_limit, truncated=truncated
         )
 
     async def execute(self, call: ToolCall, context: OperationContext) -> ToolResult:
@@ -229,11 +219,33 @@ class _VectorTool:
         return ConnectionHealth(True, "Vector store connection is available.")
 
     def _search(self, vector: list[float], limit: int) -> list[dict[str, Any]]:
-        """Query the configured backend; implemented by each vendor adapter."""
+        """Query the configured backend; implemented by each vendor adapter.
+
+        Parameters
+        ----------
+        vector : list[float]
+            Finite numeric query vector.
+        limit : int
+            Maximum permitted amount for this operation.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            Value produced by the operation.
+        """
         raise NotImplementedError
 
     def _health(self) -> None:
-        """Check backend connectivity; implemented by each vendor adapter."""
+        """Check backend connectivity; implemented by each vendor adapter.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         raise NotImplementedError
 
 
@@ -253,6 +265,10 @@ class QdrantTool(_VectorTool):
             Configured Qdrant client instance.
         max_chunks : int, optional
             Maximum records returned by one query.
+
+        Returns
+        -------
+        None
         """
         super().__init__(collection, max_chunks=max_chunks)
         self.client = client
@@ -297,7 +313,16 @@ class QdrantTool(_VectorTool):
         ]
 
     def _health(self) -> None:
-        """Fetch collection metadata to verify Qdrant connectivity."""
+        """Fetch collection metadata to verify Qdrant connectivity.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self.client.get_collection(self.collection)
 
 
@@ -317,6 +342,10 @@ class ChromaTool(_VectorTool):
             Configured Chroma client instance.
         max_chunks : int, optional
             Maximum records returned by one query.
+
+        Returns
+        -------
+        None
         """
         super().__init__(collection, max_chunks=max_chunks)
         self.client = client
@@ -328,6 +357,10 @@ class ChromaTool(_VectorTool):
         -------
         Any
             Chroma collection handle.
+
+        Parameters
+        ----------
+        None
         """
         return self.client.get_collection(self.collection)
 
@@ -363,7 +396,16 @@ class ChromaTool(_VectorTool):
         return records
 
     def _health(self) -> None:
-        """Count collection records to verify Chroma connectivity."""
+        """Count collection records to verify Chroma connectivity.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self._collection().count()
 
 
@@ -383,6 +425,10 @@ class MilvusTool(_VectorTool):
             Configured Milvus client instance.
         max_chunks : int, optional
             Maximum records returned by one query.
+
+        Returns
+        -------
+        None
         """
         super().__init__(collection, max_chunks=max_chunks)
         self.client = client
@@ -427,7 +473,16 @@ class MilvusTool(_VectorTool):
         return records
 
     def _health(self) -> None:
-        """Describe the collection to verify Milvus connectivity."""
+        """Describe the collection to verify Milvus connectivity.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self.client.describe_collection(self.collection)
 
 

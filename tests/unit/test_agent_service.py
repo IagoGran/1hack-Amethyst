@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from amethyst.adapters.fakes import InMemoryRepository
 from amethyst.application.service import AgentService, ProviderBinding, ToolBinding
 from amethyst.configuration.limits import Limits
 from amethyst.domain.contracts import (
@@ -35,6 +34,7 @@ from amethyst.security.credentials import Redactor
 from amethyst.security.permissions import ApprovalEngine, PermissionService
 from amethyst.security.retention import DiagnosticStore, TaskTemporaryData
 from amethyst.security.workspace import Workspace
+from tests.support.fakes import InMemoryRepository
 
 REQUEST = StartTask(
     "conversation", "Please inspect and fix the supplied error.", "model"
@@ -45,6 +45,17 @@ class Model:
     def __init__(
         self, responses: list[tuple[ModelEvent, ...] | ContractError] | None = None
     ) -> None:
+        """Initialize model state and dependencies.
+
+        Parameters
+        ----------
+        responses : list[tuple[ModelEvent, ...] | ContractError] | None
+            Deterministic model events or failures emitted by the fixture.
+
+        Returns
+        -------
+        None
+        """
         self.responses = responses or [
             (TextDelta("Done."), ModelCompleted(Usage(10, 2)))
         ]
@@ -53,11 +64,37 @@ class Model:
         self.context_tokens = 40_000
 
     async def capabilities(self, model_id: str) -> ModelCapabilities:
+        """Report the configured model capabilities and context capacity.
+
+        Parameters
+        ----------
+        model_id : str
+            Configured model identifier.
+
+        Returns
+        -------
+        ModelCapabilities
+            Supported generation features and context capacity.
+        """
         return ModelCapabilities(True, True, self.context_tokens)
 
     async def stream(
         self, request: ModelRequest, context: OperationContext
     ) -> AsyncIterator[ModelEvent]:
+        """Provide the stream test fixture.
+
+        Parameters
+        ----------
+        request : ModelRequest
+            Typed request describing the operation and its scope.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Yields
+        ------
+        ModelEvent
+            Ordered values produced by the operation.
+        """
         self.requests.append(request)
         if self.block:
             await asyncio.sleep(20)
@@ -77,6 +114,21 @@ class Tool:
         fail: ContractError | None = None,
         content: str = "Result",
     ) -> None:
+        """Initialize tool state and dependencies.
+
+        Parameters
+        ----------
+        readonly : bool
+            Whether the test tool advertises read-only execution.
+        fail : ContractError | None
+            Optional deterministic failure injected by the test.
+        content : str
+            Text content to display, persist, or return.
+
+        Returns
+        -------
+        None
+        """
         self.readonly = readonly
         self.calls = 0
         self.fail = fail
@@ -85,9 +137,34 @@ class Tool:
 
     @property
     def definition(self) -> ToolDefinition:
+        """Describe the tool name and its accepted arguments.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        ToolDefinition
+            Model-visible tool schema.
+        """
         return ToolDefinition("fixture.read", "Read fixture", read_only=self.readonly)
 
     async def execute(self, call: ToolCall, context: OperationContext) -> ToolResult:
+        """Provide the execute test fixture.
+
+        Parameters
+        ----------
+        call : ToolCall
+            Tool invocation with its identifier, name, and arguments.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        ToolResult
+            Bounded result with call identity and source metadata.
+        """
         self.calls += 1
         if self.fail and self.calls == 1:
             raise self.fail
@@ -100,6 +177,24 @@ def make_app(
     tools: tuple[ToolBinding, ...] = (),
     limits: Limits | None = None,
 ) -> AgentService:
+    """Provide the make app test fixture.
+
+    Parameters
+    ----------
+    root : Path
+        Application-owned data directory or approved workspace root.
+    model : Model | None
+        Model provider or deterministic provider fixture.
+    tools : tuple[ToolBinding, ...]
+        Enabled tool bindings supplied to the agent.
+    limits : Limits | None
+        Validated operational resource limits.
+
+    Returns
+    -------
+    AgentService
+        Value produced by the operation.
+    """
     engine = ApprovalEngine("session")
     permissions = PermissionService("session")
     redactor = Redactor()
@@ -125,6 +220,24 @@ async def collect(
     approve: ApprovalEngine | None = None,
     grant: bool = True,
 ) -> list[TaskEvent]:
+    """Provide the collect test fixture.
+
+    Parameters
+    ----------
+    app : ApplicationService
+        Application or Qt instance used by the operation.
+    task_id : str
+        Identifier of the task being inspected or controlled.
+    approve : ApprovalEngine | None
+        Approval service used to decide the test proposal.
+    grant : bool
+        Read grant used to authorize the operation.
+
+    Returns
+    -------
+    list[TaskEvent]
+        Value produced by the operation.
+    """
     events = []
     async with asyncio.timeout(5):
         async for event in app.events(task_id):
@@ -135,13 +248,47 @@ async def collect(
 
 
 def response(call: ToolCall) -> tuple[ModelEvent, ...]:
+    """Provide the response test fixture.
+
+    Parameters
+    ----------
+    call : ToolCall
+        Tool invocation with its identifier, name, and arguments.
+
+    Returns
+    -------
+    tuple[ModelEvent, ...]
+        Value produced by the operation.
+    """
     return TextDelta(
         "Plan: inspect the relevant result before deciding the next action.\n"
     ), ModelCompleted(Usage(10, 20), (call,), "tool_calls")
 
 
 def test_agent_plan_tool_validation_and_conversation_resume(tmp_path: Path) -> None:
+    """Verify agent plan tool validation and conversation resume.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise agent plan tool validation and conversation resume.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         tool = Tool()
         model = Model(
             [
@@ -180,7 +327,31 @@ def test_agent_plan_tool_validation_and_conversation_resume(tmp_path: Path) -> N
 
 @pytest.mark.parametrize("grant", [True, False])
 def test_protected_tool_requires_explicit_approval(tmp_path: Path, grant: bool) -> None:
+    """Verify protected tool requires explicit approval.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    grant : bool
+        Read grant used to authorize the operation.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise protected tool requires explicit approval.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         tool = Tool(readonly=False)
         model = Model(
             [
@@ -213,7 +384,31 @@ def test_protected_tool_requires_explicit_approval(tmp_path: Path, grant: bool) 
 def test_cancellation_blocks_dispatch_and_closes_events(
     tmp_path: Path, mode: str
 ) -> None:
+    """Verify cancellation blocks dispatch and closes events.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise cancellation blocks dispatch and closes events.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         tool = Tool()
         model = Model([response(ToolCall("call", "fixture.read"))])
         model.block = mode == "model"
@@ -239,7 +434,29 @@ def test_cancellation_blocks_dispatch_and_closes_events(
 
 
 def test_budget_pause_requires_explicit_increase(tmp_path: Path) -> None:
+    """Verify budget pause requires explicit increase.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise budget pause requires explicit increase.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         model = Model()
         app = make_app(tmp_path, model, limits=Limits(task_tokens=1))
         task = await app.start_task(REQUEST)
@@ -276,7 +493,31 @@ def test_budget_pause_requires_explicit_increase(tmp_path: Path) -> None:
     ],
 )
 def test_model_limits_produce_terminal_failure(tmp_path: Path, mode: str) -> None:
+    """Verify model limits produce terminal failure.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise model limits produce terminal failure.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         model = Model()
         limits = Limits(retries=0)
         if mode in {"idle", "total", "task"}:
@@ -313,14 +554,38 @@ def test_model_limits_produce_terminal_failure(tmp_path: Path, mode: str) -> Non
 def test_retry_usage_and_safe_tool_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        "amethyst.application.service.retry_delay",
-        lambda error, attempt, retries, safe: (
-            0.0 if safe and error.transient and attempt < retries else None
-        ),
-    )
+    """Verify retry usage and safe tool retries.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    monkeypatch : pytest.MonkeyPatch
+        Pytest fixture for temporary dependency replacements.
+
+    Returns
+    -------
+    None
+    """
+    for module in ("model_execution", "tool_dispatch"):
+        monkeypatch.setattr(
+            f"amethyst.application.{module}.retry_delay",
+            lambda error, attempt, retries, safe: (
+                0.0 if safe and error.transient and attempt < retries else None
+            ),
+        )
 
     async def scenario() -> None:
+        """Exercise retry usage and safe tool retries.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         transient = ContractError(
             ErrorCode.UNAVAILABLE, "Temporary", transient=True, usage=Usage(4, 1)
         )
@@ -356,7 +621,31 @@ def test_retry_usage_and_safe_tool_retries(
     ],
 )
 def test_unsafe_and_invalid_tool_work_stops(tmp_path: Path, mode: str) -> None:
+    """Verify unsafe and invalid tool work stops.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise unsafe and invalid tool work stops.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         tool = Tool(
             readonly=mode != "mutating_failure",
             fail=ContractError(ErrorCode.OUTCOME_UNKNOWN, "Unknown", transient=True)
@@ -398,7 +687,29 @@ def test_unsafe_and_invalid_tool_work_stops(tmp_path: Path, mode: str) -> None:
 
 
 def test_workspace_plan_approval_apply_and_recheck(tmp_path: Path) -> None:
+    """Verify workspace plan approval apply and recheck.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise workspace plan approval apply and recheck.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         (tmp_path / "file").write_text("old\n")
         model = Model(
             [
@@ -423,7 +734,29 @@ def test_workspace_plan_approval_apply_and_recheck(tmp_path: Path) -> None:
 
 
 def test_skills_and_redaction_are_applied_before_persistence(tmp_path: Path) -> None:
+    """Verify skills and redaction are applied before persistence.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise skills and redaction are applied before persistence.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         model = Model(
             [
                 (

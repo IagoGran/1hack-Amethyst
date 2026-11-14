@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from amethyst.adapters.fakes import InMemoryRepository
 from amethyst.application.service import AgentService, ProviderBinding
 from amethyst.domain.contracts import (
     ApprovalRequest,
@@ -29,6 +28,7 @@ from amethyst.domain.contracts import (
 from amethyst.domain.tasks import TaskStatus
 from amethyst.security.permissions import ApprovalEngine, PermissionService
 from amethyst.security.sandbox import DockerSandbox, ProcessResult
+from tests.support.fakes import InMemoryRepository
 
 
 @dataclass

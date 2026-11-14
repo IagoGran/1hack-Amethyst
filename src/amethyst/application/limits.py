@@ -1,117 +1,48 @@
 """Deadline, token accounting, conservative result limits, and retry rules."""
 
-import asyncio
 import json
-import random
-import re
-import time
-from collections.abc import Awaitable, Callable
 from dataclasses import asdict, replace
 
+from amethyst.application.budgets import (
+    TokenBudget as TokenBudget,
+)
+from amethyst.application.budgets import (
+    request_tokens as request_tokens,
+)
+from amethyst.application.budgets import (
+    token_bound as token_bound,
+)
+from amethyst.application.timing import Deadline as Deadline
+from amethyst.application.timing import retry_delay as retry_delay
 from amethyst.configuration.limits import Limits
 from amethyst.domain.contracts import (
     ContractError,
     ErrorCode,
-    ModelRequest,
     ToolResult,
-    Usage,
 )
-
-
-def token_bound(text: str) -> int:
-    """UTF-8 byte upper bound; conservative until C supplies model tokenizers."""
-    return len(text.encode("utf-8"))
-
-
-def request_tokens(request: ModelRequest) -> int:
-    return (
-        token_bound(
-            json.dumps(
-                {
-                    "messages": [asdict(m) for m in request.messages],
-                    "tools": [asdict(t) for t in request.tools],
-                },
-                ensure_ascii=False,
-            )
-        )
-        + 128
-    )
-
-
-class Deadline:
-    def __init__(
-        self, seconds: float, clock: Callable[[], float] = time.monotonic
-    ) -> None:
-        self.clock = clock
-        self.end = clock() + seconds
-
-    def remaining(self) -> float:
-        remaining = self.end - self.clock()
-        if remaining <= 0:
-            raise ContractError(ErrorCode.TIMEOUT, "Task deadline exceeded.")
-        return remaining
-
-    async def run[T](self, operation: Callable[[], Awaitable[T]], limit: float) -> T:
-        try:
-            async with asyncio.timeout(min(limit, self.remaining())):
-                return await operation()
-        except TimeoutError:
-            raise ContractError(ErrorCode.TIMEOUT, "Operation timed out.") from None
-
-    async def approval_wait[T](self, operation: Callable[[], Awaitable[T]]) -> T:
-        self.remaining()
-        start = self.clock()
-        try:
-            return await operation()
-        finally:
-            self.end += self.clock() - start
-
-
-class TokenBudget:
-    def __init__(self, limit: int) -> None:
-        self.limit = limit
-        self.used = 0
-
-    def can_reserve(self, tokens: int) -> bool:
-        return self.used + tokens <= self.limit
-
-    def charge(self, usage: Usage | None, reserved: int) -> Usage:
-        if usage is None:
-            usage = Usage(reserved, 0)
-        if usage.input_tokens < 0 or usage.output_tokens < 0:
-            self.used += reserved
-            raise ContractError(
-                ErrorCode.INVALID_INPUT, "Provider returned invalid usage."
-            )
-        self.used += usage.input_tokens + usage.output_tokens
-        return usage
-
-    def increase(self, tokens: int) -> None:
-        if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens <= 0:
-            raise ContractError(
-                ErrorCode.INVALID_INPUT, "Budget increase must be a positive integer."
-            )
-        self.limit += tokens
-
-
-def retry_delay(
-    error: ContractError, attempt: int, retries: int, *, safe: bool
-) -> float | None:
-    if (
-        not safe
-        or attempt >= retries
-        or not error.transient
-        or error.code not in {ErrorCode.UNAVAILABLE, ErrorCode.TIMEOUT}
-    ):
-        return None
-    return float(
-        max(2**attempt + random.uniform(0, 0.25), error.retry_after_seconds or 0)
-    )
+from amethyst.security.sql import require_read_only_sql as require_read_only_sql
+from amethyst.serialization import bounded_json_records
 
 
 def bounded_result(
     result: ToolResult, limits: Limits, kind: str = "text"
 ) -> ToolResult:
+    """Apply row, retrieval, content-byte, and source-metadata limits.
+
+    Parameters
+    ----------
+    result : ToolResult
+        Tool result to inspect, redact, or bound.
+    limits : Limits
+        Validated operational resource limits.
+    kind : str
+        Provider, connector, or structured-result category.
+
+    Returns
+    -------
+    ToolResult
+        Bounded result with call identity and source metadata.
+    """
     content = result.content
     truncated = result.truncated
     if kind in {"sql", "retrieval"}:
@@ -136,12 +67,15 @@ def bounded_result(
                             errors="ignore"
                         )
                         truncated = True
-            content = json.dumps(value, ensure_ascii=False)
-            # Preserve valid structured results while reducing byte size.
-            while len(content.encode()) > limits.output_bytes and value[key]:
-                value[key].pop()
-                truncated = True
-                content = json.dumps(value, ensure_ascii=False)
+            metadata = {name: child for name, child in value.items() if name != key}
+            prefix = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))[
+                :-1
+            ]
+            prefix += ("," if metadata else "") + json.dumps(key) + ":["
+            content, kept = bounded_json_records(
+                value[key], limits.output_bytes, prefix=prefix, suffix="]}"
+            )
+            truncated |= kept < len(value[key])
         except (ValueError, KeyError, TypeError):
             raise ContractError(
                 ErrorCode.INVALID_INPUT, "Malformed structured tool result."
@@ -161,53 +95,3 @@ def bounded_result(
             ErrorCode.INVALID_INPUT, "Tool sources exceed the output limit."
         )
     return replace(result, content=content, truncated=truncated)
-
-
-def require_read_only_sql(query: str) -> None:
-    """Conservative admission policy, in addition to C's DB read-only transaction.
-
-    Comments, quoted identifiers and literals are removed before token inspection.
-    Unknown/unsafe statements are denied. DB permissions remain mandatory because
-    SELECT functions can have side effects and dialects differ.
-    """
-    stripped = re.sub(
-        r"'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|--[^\n]*|/\*.*?\*/", " ", query, flags=re.S
-    )
-    tokens = re.findall(r"[a-z_]+|;", stripped.lower())
-    forbidden = {
-        "insert",
-        "update",
-        "delete",
-        "merge",
-        "replace",
-        "drop",
-        "alter",
-        "create",
-        "truncate",
-        "grant",
-        "revoke",
-        "copy",
-        "call",
-        "execute",
-        "pragma",
-        "attach",
-        "detach",
-        "vacuum",
-        "into",
-        "lock",
-        "load",
-        "pg_sleep",
-        "dblink",
-        "lo_export",
-        "lo_import",
-    }
-    if (
-        not tokens
-        or tokens[0] not in {"select", "with"}
-        or any(t in forbidden for t in tokens)
-        or ";" in tokens[:-1]
-        or "$" in stripped
-    ):
-        raise ContractError(
-            ErrorCode.PERMISSION_DENIED, "Only read-only SQL queries are permitted."
-        )

@@ -10,6 +10,7 @@ import urllib.request
 from collections.abc import AsyncGenerator, Callable
 from typing import Any, cast
 
+from amethyst.adapters.http import retry_after as _retry_after
 from amethyst.domain.contracts import ContractError, ErrorCode
 
 
@@ -116,6 +117,10 @@ def _raise_stream_error(value: object) -> None:
     ------
     ContractError
         Always, with a redacted message and stable error code.
+
+    Returns
+    -------
+    None
     """
     code, transient, retry_after = cast(tuple[ErrorCode, bool, float | None], value)
     message = (
@@ -151,7 +156,19 @@ def _event_publisher(
     """
 
     def publish(kind: str, value: object) -> None:
-        """Schedule one typed event on the owning asyncio loop."""
+        """Schedule one typed event on the owning asyncio loop.
+
+        Parameters
+        ----------
+        kind : str
+            Transport event category.
+        value : object
+            Decoded transport event or safe failure payload.
+
+        Returns
+        -------
+        None
+        """
         loop.call_soon_threadsafe(queue.put_nowait, (kind, value))
 
     return publish
@@ -187,6 +204,10 @@ def _read_response(
         Mutable holder used to close the active response on cancellation.
     publish : Callable[[str, object], None]
         Thread-safe event callback.
+
+    Returns
+    -------
+    None
     """
     request = urllib.request.Request(
         url,
@@ -243,6 +264,10 @@ def _read_successful_response(
         Mutable response reference for cancellation cleanup.
     publish : Callable[[str, object], None]
         Thread-safe event callback.
+
+    Returns
+    -------
+    None
     """
     response = urllib.request.urlopen(request, timeout=max(0.1, timeout))
     response_holder.append(response)
@@ -330,6 +355,10 @@ def _close_response(response_holder: list[object]) -> None:
     ----------
     response_holder : list[object]
         Mutable holder populated by ``_read_successful_response``.
+
+    Returns
+    -------
+    None
     """
     if not response_holder:
         return
@@ -337,24 +366,3 @@ def _close_response(response_holder: list[object]) -> None:
         response_holder[0].close()  # type: ignore[attr-defined]
     except OSError:
         pass
-
-
-def _retry_after(value: str | None) -> float | None:
-    """Parse a numeric ``Retry-After`` header value.
-
-    Parameters
-    ----------
-    value : str or None
-        Header value expressed as a number of seconds.
-
-    Returns
-    -------
-    float or None
-        Non-negative delay, or ``None`` when absent or invalid.
-    """
-    if value is None:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        return None

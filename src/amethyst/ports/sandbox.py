@@ -13,5 +13,17 @@ class Sandbox(Protocol):
 
         Cancellation must stop the container before acknowledgement. An uncertain
         outcome must be reported explicitly and must never be retried automatically.
+
+        Parameters
+        ----------
+        request : SandboxRequest
+            Typed request describing the operation and its scope.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        SandboxResult
+            Value produced by the operation.
         """
         ...
