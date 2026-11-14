@@ -3,7 +3,7 @@
 import time
 from uuid import uuid4
 
-from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QComboBox,
@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
-    QSplitter,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -145,23 +144,8 @@ class DesktopWindow(QMainWindow):
             ("Task details", self.details),
         ):
             self.page_indexes[name] = self.pages.addWidget(page)
-        splitter = QSplitter()
-        splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self.sidebar)
-        splitter.addWidget(self.pages)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([250, 930])
-        self._splitter = splitter
-        self._ui_settings = QSettings("1hack-Amethyst", "Amethyst")
-        saved_splitter = self._ui_settings.value("desktop/splitter")
-        if saved_splitter:
-            splitter.restoreState(saved_splitter)
-        splitter.splitterMoved.connect(
-            lambda *_: self._ui_settings.setValue(
-                "desktop/splitter", splitter.saveState()
-            )
-        )
-        layout.addWidget(splitter)
+        layout.addWidget(self.sidebar)
+        layout.addWidget(self.pages, 1)
         self.setCentralWidget(root)
         self.sidebar.page_requested.connect(self._navigate)
         self.sidebar.new_conversation_requested.connect(self._new)
