@@ -37,7 +37,7 @@ Add or update tests for behavior changes and important permission, tool executio
 
 Requirements section 5.8 defines the release gate; implementation and results remain `Pending`.
 
-PydanticAI now owns the iterative tool cycle through the existing provider and dispatcher bridges. Deterministic coverage for PydanticAI message-history conversion, repeated tool calls, and token-use display remains `Pending`; no test result is implied by the adapter imports.
+PydanticAI now owns the iterative tool cycle through the existing provider and dispatcher bridges. `ModelRunner` has a guarded compatibility path for exact textual `{name, arguments}` envelopes matching an enabled tool; deterministic coverage for message-history conversion, repeated tool calls, textual-envelope recovery, and token-use display remains `Pending`; no test result is implied by static checks.
 
 - All critical-path tests must pass: approval denial/revocation, lifetime and batch scope, changed-diff invalidation, read-only SQL, sandbox boundaries and default network denial, cancellation, timeouts/retries, budget enforcement, secret redaction, and task-state consistency.
 - Achieve at least 80% aggregate branch coverage across `domain/`, `application/`, and `security/`. `pytest-cov` and branch measurement are configured in `pyproject.toml`. Its `fail_under` checks combined statement/branch coverage; also inspect `covered_branches / num_branches` in the coverage JSON for the required branch-only gate. Integrated desktop run on Ubuntu 24.04.3 WSL, Python 3.13.18: 327/384 branches (85.16%), 92.32% combined coverage. Real-container tests remain opt-in.

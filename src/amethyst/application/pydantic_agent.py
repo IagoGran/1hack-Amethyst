@@ -118,11 +118,6 @@ class ProviderModel(Model):
         text, completed = await self.service._model_runner.generate(
             self.record, self.binding, instructions
         )
-        if completed.tool_calls and not text.strip():
-            raise ContractError(
-                ErrorCode.INVALID_INPUT,
-                "A visible plan is required before tool execution.",
-            )
         self.record.messages.append(
             Message("assistant", text, tool_calls=completed.tool_calls)
         )
@@ -365,6 +360,9 @@ def _build_tool(
         if not ctx.tool_call_id:
             raise ContractError(ErrorCode.INVALID_INPUT, "Tool call ID is missing.")
         call = ToolCall(ctx.tool_call_id, definition.name, arguments)
+        await service._state(
+            record, TaskStatus.RUNNING, f"Calling tool: {definition.name}."
+        )
         result = await service._tool_dispatcher.execute(record, call)
         await service._emit(record, result)
         record.messages.append(Message("tool", result.content, call.id))
