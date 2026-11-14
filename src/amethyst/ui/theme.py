@@ -123,6 +123,16 @@ QPushButton#recent:checked, QPushButton#recent[active="true"] {
   color: #f3eaff;
   border-left: 3px solid #b48ae2;
 }
+QWidget#conversationRow { background: transparent; }
+QToolButton#deleteConversation {
+  background: transparent;
+  color: #aaa2b4;
+  border: 0;
+  border-radius: 6px;
+  font-size: 13pt;
+  padding: 0;
+}
+QToolButton#deleteConversation:hover { background: #51313e; color: #ffdce5; }
 QLabel#statusPill {
   background: #202127;
   border: 1px solid #34353e;

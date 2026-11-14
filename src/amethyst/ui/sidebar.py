@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -169,6 +170,8 @@ class NavigationSidebar(QWidget):
         self._is_collapsed = False
         self._buttons: dict[str, NavigationButton] = {}
         self._conversation_buttons: dict[str, list[ConversationButton]] = {}
+        self._conversation_rows: dict[str, list[QWidget]] = {}
+        self._conversation_delete_buttons: dict[str, list[QToolButton]] = {}
         self._active_conversation_id: str | None = None
         self._build_content()
         self._build_resize_animation()
@@ -462,19 +465,20 @@ class NavigationSidebar(QWidget):
         self._recent_status.setText("No saved conversations" if not values else "")
         self._clear_conversation_buttons()
         for conversation in values[-5:]:
-            button = self._make_conversation_button(conversation)
-            self._recent_layout.addWidget(button)
+            row = self._make_conversation_row(conversation)
+            self._recent_layout.addWidget(row)
         for conversation in values:
-            button = self._make_conversation_button(conversation)
+            row = self._make_conversation_row(conversation)
             self._all_chats_layout.insertWidget(
-                self._all_chats_layout.count() - 1, button
+                self._all_chats_layout.count() - 1, row
             )
         self.set_active_conversation(self._active_conversation_id)
+        self._apply_sidebar_state(self._is_collapsed)
 
-    def _make_conversation_button(
+    def _make_conversation_row(
         self, conversation: Conversation
-    ) -> ConversationButton:
-        """Create a selectable chat row with a context-menu delete action.
+    ) -> QWidget:
+        """Create a chat row with open and adjacent delete controls.
 
         Parameters
         ----------
@@ -483,18 +487,45 @@ class NavigationSidebar(QWidget):
 
         Returns
         -------
-        ConversationButton
-            Value produced by the operation.
+        QWidget
+            Row containing the conversation title and delete button.
         """
-        button = ConversationButton(conversation.title, conversation.id)
+        title = conversation.title.strip() or "Untitled chat"
+        row = QWidget()
+        row.setObjectName("conversationRow")
+        row.installEventFilter(self)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(2)
+        button = ConversationButton(title, conversation.id)
+        button.setMinimumWidth(0)
+        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        button.setToolTip(title)
+        button.installEventFilter(self)
         button.clicked.connect(
             partial(self._request_recent_conversation, conversation.id)
         )
         button.customContextMenuRequested.connect(
             partial(self._show_conversation_menu, button, conversation.id)
         )
+        delete_button = QToolButton(row)
+        delete_button.setObjectName("deleteConversation")
+        delete_button.setText("×")
+        delete_button.setAccessibleName(f"Delete chat: {title}")
+        delete_button.setToolTip("Delete chat")
+        delete_button.setFixedSize(24, 24)
+        delete_button.installEventFilter(self)
+        delete_button.clicked.connect(
+            partial(self._request_delete_conversation, conversation.id)
+        )
+        row_layout.addWidget(button, 1)
+        row_layout.addWidget(delete_button)
         self._conversation_buttons.setdefault(conversation.id, []).append(button)
-        return button
+        self._conversation_rows.setdefault(conversation.id, []).append(row)
+        self._conversation_delete_buttons.setdefault(
+            conversation.id, []
+        ).append(delete_button)
+        return row
 
     def _clear_conversation_buttons(self) -> None:
         """Remove prior conversation rows before refreshing both lists.
@@ -507,12 +538,14 @@ class NavigationSidebar(QWidget):
         -------
         None
         """
-        for buttons in self._conversation_buttons.values():
-            for button in buttons:
-                self._recent_layout.removeWidget(button)
-                self._all_chats_layout.removeWidget(button)
-                button.deleteLater()
+        for rows in self._conversation_rows.values():
+            for row in rows:
+                self._recent_layout.removeWidget(row)
+                self._all_chats_layout.removeWidget(row)
+                row.deleteLater()
         self._conversation_buttons.clear()
+        self._conversation_rows.clear()
+        self._conversation_delete_buttons.clear()
 
     def _show_conversation_menu(
         self,
@@ -609,6 +642,24 @@ class NavigationSidebar(QWidget):
         None
         """
         self.recent_conversation_requested.emit(conversation_id)
+
+    def _request_delete_conversation(
+        self, conversation_id: str, checked: bool = False
+    ) -> None:
+        """Forward a row's delete-button press to the desktop confirmation flow.
+
+        Parameters
+        ----------
+        conversation_id : str
+            Persistent conversation identifier.
+        checked : bool
+            Checked state emitted by the Qt control.
+
+        Returns
+        -------
+        None
+        """
+        self.delete_conversation_requested.emit(conversation_id)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Expand on hover and collapse after the pointer leaves the sidebar.
@@ -716,6 +767,9 @@ class NavigationSidebar(QWidget):
         self._new_conversation_button.setVisible(not collapsed)
         for button in self._buttons.values():
             button.set_collapsed(collapsed)
+        for buttons in self._conversation_delete_buttons.values():
+            for button in buttons:
+                button.setVisible(not collapsed)
         self._update_mode_button()
 
     def _update_mode_button(self) -> None:

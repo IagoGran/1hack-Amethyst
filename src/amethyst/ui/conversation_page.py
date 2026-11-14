@@ -7,8 +7,10 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QLabel,
     QHBoxLayout,
+    QLayout,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -25,9 +27,10 @@ class ConversationPage(ComposerPage):
     workspace_access_requested = Signal(bool)
     undo_requested = Signal()
 
-    composer_placeholder = "Continue this conversation?"
+    composer_placeholder = "Start typing here..."
     composer_accessible_name = "Message in current conversation"
     composer_status_name = "Conversation status"
+    composer_status_visible = False
 
     def __init__(
         self, parent: QWidget | None = None, *, disclosure: str | None = None
@@ -90,7 +93,11 @@ class ConversationPage(ComposerPage):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._message_host = QWidget()
+        self._message_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
         self._message_layout = QVBoxLayout(self._message_host)
+        self._message_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self._message_layout.setContentsMargins(8, 8, 8, 8)
         self._message_layout.setSpacing(12)
         self._message_host.setObjectName("messageHost")
@@ -168,7 +175,7 @@ class ConversationPage(ComposerPage):
         None
         """
         self._add_message("user", prompt)
-        self._active_response = self._add_message("assistant", "")
+        self._active_response = self._add_message("assistant", "", animate=True)
         self._active_response.set_thinking(True)
         self._update_undo_action(0)
         self._prompt.clear()
@@ -262,6 +269,8 @@ class ConversationPage(ComposerPage):
         content: str,
         created_at: str | None = None,
         stacktrace: tuple[str, ...] = (),
+        *,
+        animate: bool = False,
     ) -> ConversationMessageCard:
         """Insert one role-styled card before the transcript's bottom spacer.
 
@@ -276,6 +285,9 @@ class ConversationPage(ComposerPage):
         stacktrace : tuple of str
             Safe frame locations for an error card.
 
+        animate : bool
+            Whether to fade in a newly created assistant response.
+
         Returns
         -------
         ConversationMessageCard
@@ -287,7 +299,7 @@ class ConversationPage(ComposerPage):
         )
         self._message_layout.insertWidget(self._message_layout.count() - 1, card)
         self._message_cards.append(card)
-        if role == "assistant":
+        if role == "assistant" and animate:
             effect = QGraphicsOpacityEffect(card)
             card.setGraphicsEffect(effect)
             animation = QPropertyAnimation(effect, b"opacity", self)

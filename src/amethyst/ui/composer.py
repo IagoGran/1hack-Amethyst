@@ -23,6 +23,7 @@ class ChatComposer(QFrame):
         accessible_name: str,
         *,
         status_name: str = "Task status",
+        show_status: bool = True,
     ) -> None:
         """Build a keyboard-accessible horizontal message composer.
 
@@ -34,6 +35,8 @@ class ChatComposer(QFrame):
             Screen reader label for message entry.
         status_name : str
             Screen reader label for the visible status.
+        show_status : bool
+            Whether to show the inline status control beside the prompt.
 
         Returns
         -------
@@ -44,7 +47,7 @@ class ChatComposer(QFrame):
         self.prompt.setObjectName("prompt")
         self.prompt.setPlaceholderText(placeholder)
         self.prompt.setAccessibleName(accessible_name)
-        self.status = QLabel("Ready")
+        self.status = QLabel("Ready", self)
         self.status.setObjectName("statusPill")
         self.status.setAccessibleName(status_name)
         self.send = QPushButton("Send ↑")
@@ -53,7 +56,10 @@ class ChatComposer(QFrame):
         actions = QHBoxLayout(self)
         actions.setContentsMargins(0, 0, 0, 0)
         actions.addWidget(self.prompt, 1)
-        actions.addWidget(self.status)
+        if show_status:
+            actions.addWidget(self.status)
+        else:
+            self.status.hide()
         actions.addWidget(self.send)
         self.prompt.returnPressed.connect(self.submit)
         self.send.clicked.connect(self.submit)
@@ -81,6 +87,7 @@ class ComposerPage(BasePage):
     composer_placeholder = "Message Amethyst…"
     composer_accessible_name = "Message Amethyst"
     composer_status_name = "Task status"
+    composer_status_visible = True
 
     def _build_composer(self) -> None:
         """Attach shared controls and preserve the existing page control aliases.
@@ -97,6 +104,7 @@ class ComposerPage(BasePage):
             self.composer_placeholder,
             self.composer_accessible_name,
             status_name=self.composer_status_name,
+            show_status=self.composer_status_visible,
         )
         self._prompt = self._composer.prompt
         self._status = self._composer.status

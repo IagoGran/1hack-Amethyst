@@ -195,6 +195,10 @@ class ConversationMessageCard(QFrame):
         document.setTextWidth(width)
         height = ceil(document.documentLayout().documentSize().height()) + 4
         self._content.setFixedHeight(max(28, height))
+        host = self.parentWidget()
+        if host and host.layout():
+            host.layout().invalidate()
+            host.updateGeometry()
 
     def set_thinking(self, active: bool) -> None:
         """Start or stop the animated status shown inside an assistant bubble.
