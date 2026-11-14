@@ -4,7 +4,7 @@
 
 - Approved MVP platforms: Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
 - Deployment: local single-user PySide6 standalone window, packaged with the existing uv wheel backend. Native installers remain `Pending`. See `docs/desktop_integration.md` for launch/configuration.
-- Agent loop: `pydantic-ai-slim` is a runtime dependency. Existing configured model adapters remain in use behind `ProviderModel`; no provider SDK extras are enabled by this dependency.
+- Agent loop: `pydantic-ai-slim[google,openai]` is a runtime dependency. Native PydanticAI models are constructed for OpenAI, Gemini, DeepSeek, and Ollama. Existing HTTP model adapters remain for health checks and protocol contract tests.
 - Product commands and project tests: Docker Engine/runc on a local Linux daemon, restricted to a read-only approved workspace, with network disabled by default. The selected profile requires cgroup v2, resource controllers, and built-in seccomp; it remains disabled until host validation. See `docs/sandbox_runtime.md`.
 
 ## Environment Differences
@@ -23,7 +23,7 @@ The live sandbox acceptance suite recognizes `AMETHYST_LIVE_SANDBOX=1`, `AMETHYS
 - External read-only SQL: SQLite 3 and PostgreSQL 16+.
 - Locally hosted vector stores: Qdrant, Milvus, and ChromaDB.
 - Web search: Brave Search API.
-- Model connections use stdlib HTTP and do not add a runtime dependency. Install optional drivers with `uv sync --extra integrations` (or one of `--extra postgresql`, `--extra qdrant`, `--extra chroma`, `--extra milvus`). Exact model IDs and context windows remain `Pending`; endpoints and credentials are supplied through validated connection settings and opaque credential references. These selections do not choose the internal application database.
+- Model providers use the PydanticAI OpenAI and Google SDK dependencies installed with the application. Install optional SQL/vector drivers with `uv sync --extra integrations` (or one of `--extra postgresql`, `--extra qdrant`, `--extra chroma`, `--extra milvus`). Exact model IDs and context windows remain `Pending`; endpoints and credentials are supplied through validated connection settings and opaque credential references. These selections do not choose the internal application database.
 
 ## Approved Operational Defaults
 

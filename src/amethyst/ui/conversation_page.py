@@ -100,6 +100,8 @@ class ConversationPage(ComposerPage):
         """
         self._clear_messages()
         for message in conversation.messages:
+            if message.role == "assistant" and not message.content.strip():
+                continue
             role = "user" if message.role == "user" else "assistant"
             self._add_message(role, message.content)
         self._status.setText(conversation.title)
@@ -152,10 +154,30 @@ class ConversationPage(ComposerPage):
         -------
         None
         """
+        self._discard_empty_response()
         self._prompt.setEnabled(True)
         self._send.setEnabled(True)
         self._status.setText(status)
         self._prompt.setFocus()
+
+    def _discard_empty_response(self) -> None:
+        """Remove the streamed assistant placeholder if no text was produced.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        response = self._active_response
+        if response is None or not response.is_empty():
+            return
+        self._message_layout.removeWidget(response)
+        self._message_cards.remove(response)
+        response.deleteLater()
+        self._active_response = None
 
     def show_error(self, message: str) -> None:
         """Show a safe operation failure and return the composer to idle.

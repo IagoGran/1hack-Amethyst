@@ -2,7 +2,7 @@
 
 ## Backend Stack
 
-Python 3.13+ with standard-library DTOs and async protocols. PydanticAI owns agent iteration and tool invocation; `ProviderModel` bridges requests to the existing model-provider port. `keyring` supplies the explicitly selected Linux Secret Service backend; optional connector clients are declared as integration extras. PySide6 supplies the desktop runtime. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
+Python 3.13+ with standard-library DTOs and async protocols. PydanticAI owns agent iteration and tool invocation through native OpenAI, Gemini, DeepSeek, and Ollama models. `application/pydantic_agent.py` retains task budgets, streaming events, history conversion, transient retries, and tool dispatch. `keyring` supplies the explicitly selected Linux Secret Service backend; optional connector clients are declared as integration extras. PySide6 supplies the desktop runtime. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
 
 ## Directory Structure
 
@@ -28,7 +28,7 @@ S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/con
 
 Provider adapters use the standard-library HTTP client and stream SSE/NDJSON. PostgreSQL and vector-store clients are optional dependencies declared in the `postgresql`, `qdrant`, `chroma`, `milvus`, and combined `integrations` extras. Install them with `uv sync --extra integrations` when using all adapters. Model IDs, exact per-model context windows, SDK versions, and live-service results remain `Pending`.
 
-Commands and tests use `security.sandbox.DockerSandbox`, with Docker Engine/runc, a local Unix socket, and a trusted digest-pinned image. The workspace is read-only, network is denied by default, implicit image volumes are rejected, daemon output logging and image health checks are disabled, and cleanup/terminal state are confirmed. Host-local fallback is absent. Runtime remains disabled until host validation; Ubuntu 24.04 and Windows/WSL2 acceptance are Pending. Read `docs/sandbox_runtime.md` before configuring or changing this boundary.
+Commands and tests use `security.sandbox.DockerSandbox`, with Docker Engine/runc, a local Unix socket, and a trusted digest-pinned image. The workspace is read-only, network is denied by default, implicit image volumes are rejected, daemon output logging and image health checks are disabled, and cleanup/terminal state are confirmed. Host-local fallback is absent. Runtime remains disabled until host validation; Ubuntu 24.04 and Windows/WSL2 acceptance are Pending. Read `docs/sandbox_runtime.md` before configuring or changing this boundary. The maintained tool list is `docs/tool_inventory.md`.
 
 ## Data and Persistence
 

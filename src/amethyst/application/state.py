@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from amethyst.application.budgets import TokenBudget
 from amethyst.application.timing import Deadline
@@ -15,15 +16,15 @@ from amethyst.domain.contracts import (
     ToolResult,
 )
 from amethyst.domain.tasks import Task
-from amethyst.ports.model_provider import ModelProvider
 from amethyst.ports.tool import AgentTool
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderBinding:
-    provider: ModelProvider
+    provider: Any
     model_id: str
     enabled: bool = True
+    context_tokens: int = 32_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class RunningTask:
     worker: asyncio.Task[None] | None = None
     messages: list[Message] = field(default_factory=list)
     partial_text: str = ""
+    tool_signatures: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True, slots=True)

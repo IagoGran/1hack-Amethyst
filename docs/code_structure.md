@@ -9,9 +9,8 @@ The application has one supported desktop entry point: `uv run 1hack-amethyst`, 
 | `domain/` | Immutable requests, results, events, and task states. Terminal states and display labels have one definition. |
 | `ports/` | Structural boundaries for application, models, tools, credentials, approval, storage, and sandboxing. The generic `Repository` contract supplies common CRUD semantics. |
 | `application/service.py` | Session/task orchestration, PydanticAI run lifecycle, event publication, cancellation, and finalization. |
-| `application/pydantic_agent.py` | PydanticAI agent/tool registration, provider-port bridge, and chat-history conversion. All registered tools execute through `ToolDispatcher`. |
+| `application/pydantic_agent.py` | Native PydanticAI agent execution, schema-backed tool registration, request streaming and budget accounting, plus chat-history conversion. All registered tools execute through `ToolDispatcher`. |
 | `application/state.py` | Provider/tool bindings and task-local execution state. |
-| `application/model_execution.py` | Request capacity checks, streamed model events, token accounting, budget pauses, and safe retries. |
 | `application/tool_dispatch.py` | Available tool schemas, exact proposals, approval waits, permission rechecks, connector dispatch, and sandbox/workspace handoff. |
 | `application/budgets.py`, `timing.py`, `limits.py` | Token accounting, task/approval timing, retry rules, and bounded result policies. Existing `limits` imports remain compatible. |
 | `configuration/` | Independent model/tool validators and factories, immutable connection metadata, operational limits, and settings persistence. |
@@ -26,7 +25,7 @@ The application has one supported desktop entry point: `uv run 1hack-amethyst`, 
 
 ## Shared behavior and compatibility
 
-Use inheritance for stable shared roles: `ModelAdapter`, `Tool`, `ReadOnlySQLTool`, `ApprovalStore`, `AsyncThread`, `ComposerPage`, and `ConnectionEditor`. Keep provider protocols, database enforcement, and authorization decisions explicit. PydanticAI owns iterative tool orchestration. Its provider bridge delegates each model request to `ModelRunner`, and every registered tool delegates to `ToolDispatcher`; model adapters request calls but never execute tools.
+Use inheritance for stable shared roles: `ModelAdapter`, `Tool`, `ReadOnlySQLTool`, `ApprovalStore`, `AsyncThread`, `ComposerPage`, and `ConnectionEditor`. Keep provider protocols, database enforcement, and authorization decisions explicit. PydanticAI owns iterative model and tool orchestration through native providers. The application enforces Amethyst request budgets and each registered tool delegates to `ToolDispatcher`; model adapters request calls but never execute tools. See [tool inventory](tool_inventory.md) for model-visible capabilities.
 
 Do not copy schemas, terminal-state sets, codec logic, stream deadlines, source alignment, or byte-truncation loops into new integrations. Extend the existing implementation appropriate to the responsibility. See [model and tool architecture](integration_architecture.md) for the built-in integration workflow. Dynamic plugin registration remains Pending.
 

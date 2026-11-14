@@ -1,5 +1,7 @@
 """Model-only settings validation and provider construction."""
 
+from typing import Any
+
 from amethyst.adapters.models.base import ModelAdapter
 from amethyst.adapters.models.providers import (
     DeepSeekModelProvider,
@@ -97,3 +99,79 @@ async def create_model_provider(
     if isinstance(context_tokens, int):
         return factory(secret, base_url=base_url, context_tokens=context_tokens)
     return factory(secret, base_url=base_url)
+
+
+async def create_pydantic_model(
+    connection: Connection, credentials: CredentialStore
+) -> Any:
+    """Build a native PydanticAI model from validated connection settings.
+
+    Parameters
+    ----------
+    connection : Connection
+        Model connection to validate and resolve.
+    credentials : CredentialStore
+        Secure secret lookup service.
+
+    Returns
+    -------
+    Any
+        Native PydanticAI model selected for the configured provider.
+
+    Notes
+    -----
+    Provider SDK imports are local so applications that configure one provider
+    do not initialize unrelated SDKs. Credentials are passed directly and never
+    copied into process environment variables.
+    """
+    validate_model_connection(connection)
+    kind = ConnectionKind(connection.kind)
+    secret = ""
+    if connection.credential_ref:
+        secret = await credentials.get(connection.credential_ref) or ""
+        if not secret:
+            raise ContractError(
+                ErrorCode.AUTHENTICATION,
+                "Configured model credentials are unavailable.",
+            )
+    model_id = str(connection.options["model_id"])
+    endpoint = connection.options.get("endpoint")
+    base_url = endpoint if isinstance(endpoint, str) else None
+    if kind == ConnectionKind.OPENAI:
+        from openai import AsyncOpenAI  # type: ignore[import-not-found]
+        from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        client = AsyncOpenAI(api_key=secret, base_url=base_url)
+        model_type = OpenAIChatModel if base_url else OpenAIResponsesModel
+        return model_type(model_id, provider=OpenAIProvider(openai_client=client))
+    if kind == ConnectionKind.DEEPSEEK:
+        from openai import AsyncOpenAI  # type: ignore[import-not-found]
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.deepseek import DeepSeekProvider
+
+        client = AsyncOpenAI(
+            api_key=secret, base_url=base_url or "https://api.deepseek.com"
+        )
+        return OpenAIChatModel(
+            model_id, provider=DeepSeekProvider(openai_client=client)
+        )
+    if kind == ConnectionKind.GEMINI:
+        from pydantic_ai.models.google import GoogleModel
+        from pydantic_ai.providers.google import GoogleProvider
+
+        return GoogleModel(
+            model_id, provider=GoogleProvider(api_key=secret, base_url=base_url)
+        )
+    if kind == ConnectionKind.OLLAMA:
+        from pydantic_ai.models.ollama import OllamaModel
+        from pydantic_ai.providers.ollama import OllamaProvider
+
+        return OllamaModel(
+            model_id,
+            provider=OllamaProvider(
+                base_url=base_url or "http://localhost:11434/v1",
+                api_key=secret or "ollama",
+            ),
+        )
+    raise ContractError(ErrorCode.INVALID_INPUT, "Unsupported model provider.")

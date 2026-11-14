@@ -4,6 +4,7 @@ from amethyst.configuration.catalog import MODEL_KINDS, ConnectionKind
 from amethyst.configuration.connection_validation import _connection_kind
 from amethyst.configuration.models import (
     create_model_provider,
+    create_pydantic_model,
     validate_model_connection,
 )
 from amethyst.configuration.tools import create_tool, validate_tool_connection
@@ -12,6 +13,7 @@ from amethyst.domain.contracts import Connection
 __all__ = [
     "ConnectionKind",
     "create_model_provider",
+    "create_pydantic_model",
     "create_tool",
     "secret_free_config",
     "validate_connection",

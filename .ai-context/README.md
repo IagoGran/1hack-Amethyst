@@ -62,6 +62,7 @@ You do not need to read every document for every task. Do not inspect code until
 - `docs/workstream_b_summary.md`: application/security composition guide and Workstream A/C integration boundaries.
 - `docs/desktop_integration.md`: integrated A/B/C desktop launch, configuration, connector translation, async ownership, and pending acceptance.
 - `docs/integration_architecture.md`: separate model/tool configuration, adapter superclasses, connection catalog, category-specific settings, and built-in extension workflow.
+- `docs/tool_inventory.md`: maintained list of model-facing tools, argument shapes, authorization, and result behavior.
 - `docs/code_structure.md`: repository-wide module boundaries, shared implementations, removal of previews, test-only support, and validation workflow.
 
 ## Maintenance Rules
