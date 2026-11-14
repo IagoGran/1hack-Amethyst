@@ -8,6 +8,7 @@ from PySide6.QtCore import (
     QEvent,
     QObject,
     QParallelAnimationGroup,
+    QPoint,
     QPropertyAnimation,
     Qt,
     QTimer,
@@ -17,7 +18,9 @@ from PySide6.QtGui import QCursor, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -75,6 +78,15 @@ class RecentConversationButton(BaseSidebarButton):
         self.conversation_id = conversation_id
         self.setObjectName("recent")
         self.setAccessibleName(f"Preview conversation: {title}")
+        self.setCheckable(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+    def set_active(self, active: bool) -> None:
+        """Highlight this conversation when it is open in the chat."""
+        self.setChecked(active)
+        self.setProperty("active", "true" if active else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class NavigationSidebar(QWidget):
@@ -83,6 +95,7 @@ class NavigationSidebar(QWidget):
     page_requested = Signal(str)
     new_conversation_requested = Signal()
     recent_conversation_requested = Signal(str)
+    delete_conversation_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Build the sidebar and connect its controls to navigation signals."""
@@ -92,6 +105,8 @@ class NavigationSidebar(QWidget):
         self._is_pinned = True
         self._is_collapsed = False
         self._buttons: dict[str, NavigationButton] = {}
+        self._conversation_buttons: dict[str, list[RecentConversationButton]] = {}
+        self._active_conversation_id: str | None = None
         self._build_content()
         self._build_resize_animation()
         self.installEventFilter(self)
@@ -108,8 +123,7 @@ class NavigationSidebar(QWidget):
         self._add_sidebar_mode(layout)
         self._add_new_conversation(layout)
         self._add_navigation(layout)
-        self._add_recent_items(layout)
-        layout.addStretch(1)
+        self._add_conversation_sections(layout)
         self._profile = QLabel("Iago   ·   Local workspace")
         self._profile.setObjectName("sidebarProfile")
         layout.addWidget(self._profile)
@@ -194,7 +208,6 @@ class NavigationSidebar(QWidget):
         layout.addWidget(section)
         items = (
             ("Chat", "◈"),
-            ("Conversations", "◷"),
             ("Skills", "✧"),
             ("Connections", "⚙"),
             ("Permissions", "⬡"),
@@ -206,23 +219,54 @@ class NavigationSidebar(QWidget):
             self._buttons[page] = button
             layout.addWidget(button)
 
-    def _add_recent_items(self, layout: QVBoxLayout) -> None:
-        """Build the separate recent-conversation area."""
+    def _add_conversation_sections(self, layout: QVBoxLayout) -> None:
+        """Build recent chats and a collapsible list of all saved chats."""
         container = QWidget()
         container.setObjectName("recentSection")
         section_layout = QVBoxLayout(container)
-        section_layout.setContentsMargins(8, 10, 8, 8)
+        section_layout.setContentsMargins(8, 8, 8, 8)
         section_layout.setSpacing(4)
         heading = QLabel("RECENT CHATS")
         heading.setObjectName("eyebrow")
         section_layout.addWidget(heading)
         self._recent_section = container
-        self._recent_layout = section_layout
-        self._recent_buttons: list[RecentConversationButton] = []
-        self._recent_status = QLabel("Open Conversations to browse history")
+        self._recent_layout = QVBoxLayout()
+        self._recent_layout.setContentsMargins(0, 0, 0, 0)
+        self._recent_layout.setSpacing(2)
+        section_layout.addLayout(self._recent_layout)
+        self._recent_status = QLabel("No saved conversations")
         self._recent_status.setObjectName("recentStatus")
         section_layout.addWidget(self._recent_status)
         layout.addWidget(container)
+        self._all_chats_toggle = QToolButton()
+        self._all_chats_toggle.setObjectName("allChatsToggle")
+        self._all_chats_toggle.setText("ALL CHATS  ▾")
+        self._all_chats_toggle.setCheckable(True)
+        self._all_chats_toggle.setChecked(True)
+        self._all_chats_toggle.setAccessibleName("Collapse all chats")
+        self._all_chats_toggle.toggled.connect(self._set_all_chats_expanded)
+        layout.addWidget(self._all_chats_toggle)
+        self._all_chats_scroll = QScrollArea()
+        self._all_chats_scroll.setObjectName("allChatsScroll")
+        self._all_chats_scroll.setWidgetResizable(True)
+        self._all_chats_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._all_chats_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._all_chats_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._all_chats_scroll.setMinimumHeight(0)
+        self._all_chats_content = QWidget()
+        self._all_chats_content.setObjectName("allChatsContent")
+        self._all_chats_layout = QVBoxLayout(self._all_chats_content)
+        self._all_chats_layout.setContentsMargins(0, 0, 0, 0)
+        self._all_chats_layout.setSpacing(2)
+        self._all_chats_layout.addStretch(1)
+        self._all_chats_scroll.setWidget(self._all_chats_content)
+        self._all_chats_viewport = self._all_chats_scroll.viewport()
+        self._all_chats_viewport.setObjectName("allChatsViewport")
+        layout.addWidget(self._all_chats_scroll, 1)
 
     def _request_page(self, page: str, checked: bool = False) -> None:
         """Emit the selected page while discarding Qt's checked-state value."""
@@ -237,23 +281,77 @@ class NavigationSidebar(QWidget):
         for name, button in self._buttons.items():
             button.set_active(name == page)
 
-    def set_recent_conversations(self, values: tuple[Conversation, ...]) -> None:
-        """Show persisted conversations as direct-open sidebar entries."""
+    def set_conversations(self, values: tuple[Conversation, ...]) -> None:
+        """Refresh recent and all-chat lists from saved conversations."""
         self._recent_status.setVisible(not values)
-        self._recent_status.setText(
-            "No saved conversations" if not values else ""
-        )
-        for button in self._recent_buttons:
-            self._recent_layout.removeWidget(button)
-            button.deleteLater()
-        self._recent_buttons.clear()
+        self._recent_status.setText("No saved conversations" if not values else "")
+        self._clear_conversation_buttons()
         for conversation in values[-5:]:
-            button = RecentConversationButton(conversation.title, conversation.id)
-            button.clicked.connect(
-                partial(self._request_recent_conversation, conversation.id)
-            )
-            self._recent_buttons.append(button)
+            button = self._make_conversation_button(conversation)
             self._recent_layout.addWidget(button)
+        for conversation in values:
+            button = self._make_conversation_button(conversation)
+            self._all_chats_layout.insertWidget(
+                self._all_chats_layout.count() - 1, button
+            )
+        self.set_active_conversation(self._active_conversation_id)
+
+    def _make_conversation_button(
+        self, conversation: Conversation
+    ) -> RecentConversationButton:
+        """Create a selectable chat row with a context-menu delete action."""
+        button = RecentConversationButton(conversation.title, conversation.id)
+        button.clicked.connect(
+            partial(self._request_recent_conversation, conversation.id)
+        )
+        button.customContextMenuRequested.connect(
+            partial(self._show_conversation_menu, button, conversation.id)
+        )
+        self._conversation_buttons.setdefault(conversation.id, []).append(button)
+        return button
+
+    def _clear_conversation_buttons(self) -> None:
+        """Remove prior conversation rows before refreshing both lists."""
+        for buttons in self._conversation_buttons.values():
+            for button in buttons:
+                self._recent_layout.removeWidget(button)
+                self._all_chats_layout.removeWidget(button)
+                button.deleteLater()
+        self._conversation_buttons.clear()
+
+    def _show_conversation_menu(
+        self,
+        button: RecentConversationButton,
+        conversation_id: str,
+        position: QPoint,
+    ) -> None:
+        """Offer deletion for a saved conversation from either sidebar list."""
+        menu = QMenu(button)
+        delete_action = menu.addAction("Delete chat")
+        if menu.exec(button.mapToGlobal(position)) == delete_action:
+            self.delete_conversation_requested.emit(conversation_id)
+
+    def _set_all_chats_expanded(self, expanded: bool) -> None:
+        """Expand or collapse the all-chats list and update its accessible label."""
+        self._all_chats_scroll.setVisible(expanded)
+        label = "ALL CHATS  ▾" if expanded else "ALL CHATS  ▸"
+        self._all_chats_toggle.setText(label)
+        self._all_chats_toggle.setAccessibleName(
+            "Collapse all chats" if expanded else "Expand all chats"
+        )
+
+    def set_active_conversation(self, conversation_id: str | None) -> None:
+        """Highlight the open chat in both recent and all-chat lists."""
+        self._active_conversation_id = conversation_id
+        for item_id, buttons in self._conversation_buttons.items():
+            for button in buttons:
+                button.set_active(item_id == conversation_id)
+
+    def show_deleted(self, conversation_id: str) -> None:
+        """Confirm deletion when the recent-chat list becomes empty."""
+        if not self._conversation_buttons:
+            self._recent_status.setText("Chat deleted")
+            self._recent_status.setVisible(True)
 
     def _request_recent_conversation(
         self, conversation_id: str, checked: bool = False
@@ -316,6 +414,10 @@ class NavigationSidebar(QWidget):
         self._brand_text.setVisible(not collapsed)
         self._workspace_label.setVisible(not collapsed)
         self._recent_section.setVisible(not collapsed)
+        self._all_chats_toggle.setVisible(not collapsed)
+        self._all_chats_scroll.setVisible(
+            not collapsed and self._all_chats_toggle.isChecked()
+        )
         self._profile.setVisible(not collapsed)
         self._new_conversation_button.setVisible(not collapsed)
         for button in self._buttons.values():

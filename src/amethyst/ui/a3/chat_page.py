@@ -109,6 +109,7 @@ class A3ChatPage(BasePage):
         self._prompt.setEnabled(True)
         self._send.setEnabled(True)
         self._status.setText(status)
+        self._prompt.setFocus()
 
     def show_error(self, message: str) -> None:
         """Show a safe operation failure and return the composer to idle."""
