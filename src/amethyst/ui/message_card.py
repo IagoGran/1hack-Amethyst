@@ -84,3 +84,17 @@ class ConversationMessageCard(QFrame):
         None
         """
         self._content.setText(self._content.text() + text)
+
+    def is_empty(self) -> bool:
+        """Return whether the message card has received any visible content.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        bool
+            True when the card contains no text.
+        """
+        return not self._content.text().strip()

@@ -6,7 +6,7 @@ import pytest
 
 from amethyst.adapters.models.base import ModelAdapter
 from amethyst.configuration.connections import validate_connection
-from amethyst.configuration.models import create_model_provider
+from amethyst.configuration.models import create_model_provider, create_pydantic_model
 from amethyst.configuration.tools import create_tool
 from amethyst.domain.contracts import Connection, ContractError, ErrorCode, JsonValue
 from tests.support.fakes import MemoryCredentialStore
@@ -129,6 +129,98 @@ def test_provider_factory_preserves_default_capacity(kind: str, capacity: int) -
         )
         assert isinstance(provider, ModelAdapter)
         assert (await provider.capabilities("fixture")).context_tokens == capacity
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("kind", "model_type"),
+    [
+        ("openai", "OpenAIResponsesModel"),
+        ("gemini", "GoogleModel"),
+        ("deepseek", "OpenAIChatModel"),
+        ("ollama", "OllamaModel"),
+    ],
+)
+def test_native_model_factory_uses_pydanticai_provider(
+    kind: str, model_type: str
+) -> None:
+    """Construct a native PydanticAI model for each configured provider.
+
+    Parameters
+    ----------
+    kind : str
+        Supported model-provider kind.
+    model_type : str
+        Expected PydanticAI model class name.
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Build a provider model without making a network request.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        credentials = MemoryCredentialStore()
+        await credentials.set("fixture-key", "fixture-value")
+        model = await create_pydantic_model(
+            Connection(
+                "model",
+                kind,
+                {"model_id": "fixture"},
+                credential_ref=None if kind == "ollama" else "fixture-key",
+            ),
+            credentials,
+        )
+        assert type(model).__name__ == model_type
+
+    asyncio.run(scenario())
+
+
+def test_custom_openai_endpoint_uses_chat_completions_model() -> None:
+    """Use OpenAI-compatible chat completions for custom provider endpoints.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Construct the configured model without making a network request.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        credentials = MemoryCredentialStore()
+        await credentials.set("fixture-key", "fixture-value")
+        model = await create_pydantic_model(
+            Connection(
+                "compatible",
+                "openai",
+                {"model_id": "fixture", "endpoint": "http://localhost:9000/v1"},
+                credential_ref="fixture-key",
+            ),
+            credentials,
+        )
+        assert type(model).__name__ == "OpenAIChatModel"
 
     asyncio.run(scenario())
 

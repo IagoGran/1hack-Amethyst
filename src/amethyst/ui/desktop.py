@@ -30,6 +30,7 @@ from amethyst.domain.contracts import (
     TaskStateChanged,
     TextDelta,
     ToolResult,
+    Usage,
 )
 from amethyst.domain.tasks import TASK_STATUS_LABELS, TaskStatus
 from amethyst.domain.tasks import TERMINAL_STATUSES as TERMINAL
@@ -328,6 +329,13 @@ class DesktopWindow(QMainWindow):
         payload = event.payload
         if isinstance(payload, TextDelta):
             self.chat.append_delta(payload.text)
+        elif isinstance(payload, Usage):
+            message = (
+                f"Token budget: {payload.task_total_tokens:,} charged, "
+                f"{payload.task_remaining_tokens:,} remaining."
+            )
+            self.statusBar().showMessage(message)
+            self.details.appendPlainText(message)
         elif isinstance(payload, TaskStateChanged):
             label = TASK_STATUS_LABELS[payload.status]
             self.statusBar().showMessage(label + ": " + payload.message)

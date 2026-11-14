@@ -35,6 +35,7 @@ from amethyst.security.permissions import ApprovalEngine, PermissionService
 from amethyst.security.retention import DiagnosticStore, TaskTemporaryData
 from amethyst.security.workspace import Workspace
 from tests.support.fakes import InMemoryRepository
+from tests.support.pydantic_model import pydantic_model
 
 REQUEST = StartTask(
     "conversation", "Please inspect and fix the supplied error.", "model"
@@ -198,14 +199,26 @@ def make_app(
     engine = ApprovalEngine("session")
     permissions = PermissionService("session")
     redactor = Redactor()
+    provider = model or Model()
+    model_limits = limits or Limits()
     return AgentService(
         session_id="session",
-        providers={"model": ProviderBinding(model or Model(), "fixture")},
+        providers={
+            "model": ProviderBinding(
+                pydantic_model(
+                    provider,
+                    input_tokens=model_limits.input_tokens,
+                    output_tokens=model_limits.output_tokens,
+                ),
+                "fixture",
+                context_tokens=provider.context_tokens,
+            )
+        },
         conversations=InMemoryRepository[Conversation](),
         approvals=engine,
         permissions=permissions,
         tools=tools,
-        limits=limits,
+        limits=model_limits,
         workspace=Workspace(root, permissions, engine),
         redactor=redactor,
         temporary=TaskTemporaryData(root),
@@ -321,6 +334,51 @@ def test_agent_plan_tool_validation_and_conversation_resume(tmp_path: Path) -> N
         assert not app.permissions.inspect()
         with pytest.raises(ContractError):
             await app.start_task(REQUEST)
+
+    asyncio.run(scenario())
+
+
+def test_tool_shaped_text_is_not_executed_as_a_tool(tmp_path: Path) -> None:
+    """Keep model text inert unless the provider returns a structured call.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Verify JSON-looking assistant text remains ordinary text.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        tool_text = '{"name":"fixture.read","arguments":{}}'
+        tool = Tool()
+        model = Model([(TextDelta(tool_text), ModelCompleted(Usage(4, 8)))])
+        app = make_app(tmp_path, model, (ToolBinding(tool, "data"),))
+
+        task = await app.start_task(REQUEST)
+        events = await collect(app, task.id)
+
+        assert (await app.get_task(task.id)).status == TaskStatus.COMPLETED
+        assert tool.calls == 0
+        assert any(
+            isinstance(event.payload, TextDelta) and event.payload.text == tool_text
+            for event in events
+        )
+        saved = await app.conversations.load("conversation")
+        assert saved.messages[-1].content == tool_text
+        await app.close()
 
     asyncio.run(scenario())
 
@@ -567,7 +625,7 @@ def test_retry_usage_and_safe_tool_retries(
     -------
     None
     """
-    for module in ("model_execution", "tool_dispatch"):
+    for module in ("pydantic_agent", "tool_dispatch"):
         monkeypatch.setattr(
             f"amethyst.application.{module}.retry_delay",
             lambda error, attempt, retries, safe: (

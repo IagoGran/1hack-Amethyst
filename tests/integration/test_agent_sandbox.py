@@ -29,6 +29,7 @@ from amethyst.domain.tasks import TaskStatus
 from amethyst.security.permissions import ApprovalEngine, PermissionService
 from amethyst.security.sandbox import DockerSandbox, ProcessResult
 from tests.support.fakes import InMemoryRepository
+from tests.support.pydantic_model import pydantic_model
 
 
 @dataclass
@@ -196,7 +197,7 @@ def test_application_sandbox_handoff(
         )
         app = AgentService(
             session_id="session",
-            providers={"fixture": ProviderBinding(provider, "fixture")},
+            providers={"fixture": ProviderBinding(pydantic_model(provider), "fixture")},
             conversations=InMemoryRepository[Conversation](),
             approvals=approvals,
             permissions=PermissionService("session"),

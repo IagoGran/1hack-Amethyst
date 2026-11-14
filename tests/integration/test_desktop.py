@@ -57,6 +57,79 @@ class Handler(BaseHTTPRequestHandler):
         assert isinstance(server, ModelServer)
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         server.requests.append(body)
+        if self.path.endswith("/chat/completions"):
+            has_tool_result = any(
+                message["role"] == "tool" for message in body["messages"]
+            )
+            if has_tool_result:
+                deltas: list[dict[str, object]] = [{"content": "The result is 42.\n"}]
+                finish_reason = "stop"
+            else:
+                name = next(
+                    tool["function"]["name"]
+                    for tool in body["tools"]
+                    if tool["function"]["name"].startswith(server.tool_kind)
+                )
+                arguments = (
+                    {"query": "SELECT value FROM sample"}
+                    if server.tool_kind == "sqlite"
+                    else {"query": "fixture"}
+                )
+                deltas = [
+                    {
+                        "content": "I will read the configured source.\n",
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "read-source",
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": json.dumps(arguments),
+                                },
+                            }
+                        ],
+                    }
+                ]
+                finish_reason = "tool_calls"
+            chunks = [
+                {
+                    "id": "fixture",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": body["model"],
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": delta,
+                            "finish_reason": None,
+                        }
+                        for delta in deltas
+                    ],
+                },
+                {
+                    "id": "fixture",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": body["model"],
+                    "choices": [
+                        {"index": 0, "delta": {}, "finish_reason": finish_reason}
+                    ],
+                    "usage": {"prompt_tokens": 20, "completion_tokens": 10},
+                },
+            ]
+            payload = (
+                b"".join(
+                    b"data: " + json.dumps(chunk).encode() + b"\n\n" for chunk in chunks
+                )
+                + b"data: [DONE]\n\n"
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         message: dict[str, object]
         if any(message["role"] == "tool" for message in body["messages"]):
             message = {"role": "assistant", "content": "The result is 42.\n"}
@@ -213,7 +286,11 @@ def configure_desktop(
             Connection(
                 "local",
                 "ollama",
-                {"model_id": "fixture", "endpoint": endpoint, "context_tokens": 8192},
+                {
+                    "model_id": "fixture",
+                    "endpoint": f"{endpoint}/v1",
+                    "context_tokens": 8192,
+                },
             ),
             "",
         ),

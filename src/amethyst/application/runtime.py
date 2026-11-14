@@ -15,7 +15,7 @@ from amethyst.configuration.connections import (
     validate_connection,
 )
 from amethyst.configuration.limits import Limits
-from amethyst.configuration.models import create_model_provider
+from amethyst.configuration.models import create_pydantic_model
 from amethyst.configuration.settings import load_limits, save_limits
 from amethyst.configuration.tools import create_tool
 from amethyst.domain.contracts import (
@@ -199,7 +199,10 @@ class DesktopRuntime:
             raise ContractError(
                 ErrorCode.INVALID_INPUT, "Select an enabled model connection."
             )
-        provider = await create_model_provider(model, self.credentials)
+        provider = await create_pydantic_model(model, self.credentials)
+        context_tokens = model.options.get("context_tokens")
+        if not isinstance(context_tokens, int) or isinstance(context_tokens, bool):
+            context_tokens = 32_000
         tools: dict[str, ToolBinding] = {}
         self.warnings = []
         for connection in values:
@@ -216,7 +219,11 @@ class DesktopRuntime:
                     f"{connection.id}: {self.redactor.redact(str(exc))}"
                 )
         self.agent.providers = {
-            selected: ProviderBinding(provider, str(model.options["model_id"]))
+            selected: ProviderBinding(
+                provider,
+                str(model.options["model_id"]),
+                context_tokens=context_tokens,
+            )
         }
         self.agent.tools = tools
 
