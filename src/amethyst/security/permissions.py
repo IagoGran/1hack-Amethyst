@@ -158,7 +158,9 @@ class PermissionService:
                     if Path(resource).resolve().is_relative_to(grant.resource):
                         return
         raise ContractError(
-            ErrorCode.PERMISSION_DENIED, "Read permission is missing or revoked."
+            ErrorCode.PERMISSION_DENIED,
+            f"Read permission for '{tool_name}' on '{resource}' is missing or "
+            "revoked; grant access to this path before retrying.",
         )
 
     def close(self) -> None:

@@ -27,8 +27,10 @@ selected. They are registered per task and all calls still pass through
 
 | Internal name | Function and implementation | Arguments | Access and authorization | Status / agent availability |
 |---|---|---|---|---|
+| `workspace.list` | List bounded directory entries; `Workspace.list` in `security/workspace.py` | `path: string` (`.` for workspace root) | Read-only; requires a read grant for the listed directory; does not follow symlinks and omits `.git` | Implemented; available only after workspace selection |
 | `workspace.read` | Read permitted UTF-8 files; `Workspace.read` in `security/workspace.py` | `path: string` | Read-only; explicit workspace read grant or one-action approval; path and file safety checks | Implemented; available only after workspace selection; task registration does not itself grant permission |
-| `workspace.edit` | Propose and apply a reviewed diff; `Workspace.propose/apply` in `security/workspace.py` | `path: string`, `content: string \| null` | Modifies files; explicit approval bound to the exact diff and current file state | Implemented; available only after workspace selection and only executes after approval |
+| `workspace.edit` | Propose and apply a reviewed diff; `Workspace.propose/apply` in `security/workspace.py` | `path: string`, `content: string \| null` | Modifies files; explicit approval bound to the exact diff, missing parent directories, and current file state | Implemented; available only after workspace selection and only executes after approval; missing parent directories are created as part of the approved edit |
+| `workspace.mkdir` | Create a directory tree; `Workspace.propose_directory/create_directory` in `security/workspace.py` | `path: string` | Modifies workspace; exact approval lists every missing parent and target directory | Implemented; available only after workspace selection and only executes after approval |
 | `sandbox.run` | Run a command in the container; `DockerSandbox.run` in `security/sandbox.py` | `argv: string[]`, optional `working_directory: string`, optional `network_enabled: boolean` | Command execution; explicit approval bound to the exact request; container-only, read-only workspace, network denied by default | Implemented but runtime disabled until image/host validation; available only when the validated sandbox is configured and enabled |
 
 ## Session availability rules
@@ -42,5 +44,8 @@ selected. They are registered per task and all calls still pass through
 - `AgentService` registers only currently enabled connector bindings and the
   workspace/sandbox tools whose dependencies are present. The dispatcher
   rechecks authorization and enabled state when each call executes.
+- The system instructions include an argument example for every tool registered
+  for the current task. Vector-search examples show a one-element vector shape;
+  the agent must use the configured collection's actual dimension.
 - Live provider, connector, and real-container acceptance remains pending unless
   separately reported as completed in the test and environment records.

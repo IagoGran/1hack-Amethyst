@@ -791,6 +791,104 @@ def test_workspace_plan_approval_apply_and_recheck(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_agent_can_create_workspace_directory_after_approval(tmp_path: Path) -> None:
+    """Verify the agent can invoke the registered workspace directory tool.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Run the directory tool through registration and approval dispatch.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        model = Model(
+            [
+                response(ToolCall("mkdir", "workspace.mkdir", {"path": "docs/new"})),
+                (TextDelta("Directory created."), ModelCompleted(Usage(3, 2))),
+            ]
+        )
+        app = make_app(tmp_path, model)
+        app.permissions.grant("workspace.read", str(tmp_path), recursive=True)
+        task = await app.start_task(REQUEST)
+        events = await collect(app, task.id, approve=app.approvals)
+        assert (await app.get_task(task.id)).status == TaskStatus.COMPLETED
+        assert (tmp_path / "docs/new").is_dir()
+        proposal = next(
+            event.payload
+            for event in events
+            if isinstance(event.payload, ApprovalRequest)
+        )
+        assert proposal.actions[0].tool_name == "workspace.mkdir"
+        assert "Create directory: docs" in proposal.actions[0].changes[0].diff
+        assert "Create directory: docs/new" in proposal.actions[0].changes[0].diff
+
+    asyncio.run(scenario())
+
+
+def test_system_instructions_include_examples_for_available_tools(
+    tmp_path: Path,
+) -> None:
+    """Verify task instructions demonstrate each registered workspace tool.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Run a task and inspect the system instructions sent to the model.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        model = Model()
+        app = make_app(tmp_path, model)
+        app.permissions.grant("workspace.read", str(tmp_path), recursive=True)
+        task = await app.start_task(REQUEST)
+        await collect(app, task.id)
+        system = next(
+            message.content
+            for message in model.requests[0].messages
+            if message.role == "system"
+        )
+        for expected in (
+            'workspace.list: {"path": "."}',
+            'workspace.read: {"path": "README.md"}',
+            (
+                'workspace.edit: {"path": "notes/example.txt", '
+                '"content": "Example text\\n"}'
+            ),
+            'workspace.mkdir: {"path": "docs/notes"}',
+        ):
+            assert expected in system
+
+    asyncio.run(scenario())
+
+
 def test_skills_and_redaction_are_applied_before_persistence(tmp_path: Path) -> None:
     """Verify skills and redaction are applied before persistence.
 
