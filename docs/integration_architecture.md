@@ -25,7 +25,7 @@ Connections contains independent **Models** and **Tools** tabs. `ModelConnection
 
 ## Available agent tools
 
-PydanticAI receives only tools enabled for the current task. Configured connectors expose read-only SQLite and PostgreSQL queries, Brave web search, and Qdrant, Milvus, or Chroma vector retrieval. When configured for the session, `workspace.read` reads permitted UTF-8 files, `workspace.edit` proposes a reviewed change, and `sandbox.run` runs an approved command in the container. The latter two protected operations remain subject to exact approval. Each configured connector receives a unique name derived from its connection kind and ID.
+PydanticAI receives only tools enabled for the current task. Configured connectors expose read-only SQLite and PostgreSQL queries, Brave web search, and Qdrant, Milvus, or Chroma vector retrieval. When configured for the session, `workspace.list` inspects permitted folders, `workspace.read` reads permitted UTF-8 files, `workspace.edit` proposes a reviewed file change (including any missing parent directories), `workspace.mkdir` proposes creating a directory tree, and `sandbox.run` runs an approved command in the container. Workspace paths are relative to the selected workspace root; listing and file reads require the matching session grant. Edits and directory creation require exact approval. System instructions include an argument example for each tool registered for that task. Each configured connector receives a unique name derived from its connection kind and ID.
 
 ## Adding a built-in integration
 

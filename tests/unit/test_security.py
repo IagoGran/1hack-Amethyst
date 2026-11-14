@@ -332,6 +332,48 @@ def test_workspace_edit_create_delete_and_expired_diff_cleanup(tmp_path: Path) -
     asyncio.run(scenario())
 
 
+def test_workspace_mkdir_requires_approval_and_creates_nested_tree(
+    tmp_path: Path,
+) -> None:
+    """Verify nested workspace directories are created only after approval.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
+    async def scenario() -> None:
+        """Exercise proposal, denial, approval, and nested creation.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        engine, _, workspace = setup(tmp_path)
+        proposal = workspace.propose_directory("docs/new/guide", CTX)
+        assert proposal.directories == ("docs", "docs/new", "docs/new/guide")
+        assert not (tmp_path / "docs").exists()
+        with pytest.raises(ContractError):
+            await workspace.create_directory(proposal, "missing", CTX)
+        assert not (tmp_path / "docs").exists()
+        await approve(engine, (proposal.action,))
+        await workspace.create_directory(proposal, "approval", CTX)
+        assert (tmp_path / "docs/new/guide").is_dir()
+        permissions = workspace.permissions
+        permissions.close()
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("mode", ["base", "content", "revoked", "created", "symlink"])
 def test_workspace_invalidated_proposals_never_write(tmp_path: Path, mode: str) -> None:
     """Verify workspace invalidated proposals never write.

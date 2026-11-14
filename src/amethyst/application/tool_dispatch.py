@@ -71,6 +71,17 @@ class ToolDispatcher:
             definitions.extend(
                 (
                     ToolDefinition(
+                        "workspace.list",
+                        "List files and directories in a permitted workspace folder. "
+                        "Paths are relative to the active workspace. "
+                        "Use '.' for its root.",
+                        {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                            "required": ["path"],
+                        },
+                    ),
+                    ToolDefinition(
                         "workspace.read",
                         "Read an explicitly permitted UTF-8 file.",
                         {
@@ -81,7 +92,9 @@ class ToolDispatcher:
                     ),
                     ToolDefinition(
                         "workspace.edit",
-                        "Propose a reviewed file change; null content deletes.",
+                        "Create, replace, or delete a UTF-8 workspace file after "
+                        "the exact proposed change is approved. Missing parent "
+                        "directories are included in that approval.",
                         {
                             "type": "object",
                             "properties": {
@@ -89,6 +102,17 @@ class ToolDispatcher:
                                 "content": {"type": ["string", "null"]},
                             },
                             "required": ["path", "content"],
+                        },
+                        read_only=False,
+                    ),
+                    ToolDefinition(
+                        "workspace.mkdir",
+                        "Create a workspace directory, including missing parent "
+                        "directories, after the exact directory list is approved.",
+                        {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                            "required": ["path"],
                         },
                         read_only=False,
                     ),
@@ -204,13 +228,33 @@ class ToolDispatcher:
         PreparedOperation
             Exact proposal and its deferred execution function.
         """
+        if call.name == "workspace.list" and self.agent.workspace is not None:
+            return self._prepare_list(record, call)
         if call.name == "workspace.read" and self.agent.workspace is not None:
             return self._prepare_read(record, call)
         if call.name == "workspace.edit" and self.agent.workspace is not None:
             return self._prepare_edit(record, call)
+        if call.name == "workspace.mkdir" and self.agent.workspace is not None:
+            return self._prepare_mkdir(record, call)
         if call.name == "sandbox.run" and self.agent.sandbox is not None:
             return self._prepare_command(record, call)
         return self._prepare_connector(record, call)
+
+    def _prepare_list(self, record: RunningTask, call: ToolCall) -> PreparedOperation:
+        """Prepare a permission-checked directory listing for the active workspace."""
+        workspace = self.agent.workspace
+        assert workspace is not None
+        path = self._string(call, "path")
+
+        async def list_directory(
+            approval_id: str | None, context: OperationContext
+        ) -> ToolResult:
+            del approval_id
+            return bounded_result(
+                ToolResult(call.id, workspace.list(path, context)), self.agent.limits
+            )
+
+        return PreparedOperation(None, list_directory)
 
     def _prepare_read(self, record: RunningTask, call: ToolCall) -> PreparedOperation:
         """Prepare a permission-checked workspace read.
@@ -306,6 +350,55 @@ class ToolDispatcher:
             return ToolResult(call.id, "Reviewed file change applied.")
 
         return PreparedOperation(edit.action, apply)
+
+    def _prepare_mkdir(self, record: RunningTask, call: ToolCall) -> PreparedOperation:
+        """Bind directory creation to an exact, reviewed directory list.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task context and operation limits.
+        call : ToolCall
+            Requested directory path.
+
+        Returns
+        -------
+        PreparedOperation
+            Exact proposal and deferred directory creation.
+        """
+        workspace = self.agent.workspace
+        assert workspace is not None
+        path = self._string(call, "path")
+        proposal = workspace.propose_directory(
+            path,
+            self.agent._context(record, self.agent.limits.tool_seconds),
+        )
+
+        async def create(
+            approval_id: str | None, context: OperationContext
+        ) -> ToolResult:
+            """Create the approved directory tree through workspace guards.
+
+            Parameters
+            ----------
+            approval_id : str or None
+                Exact-action approval identifier when required.
+            context : OperationContext
+                Task/session scope and operation limits.
+
+            Returns
+            -------
+            ToolResult
+                Confirmation containing the created workspace paths.
+            """
+            assert approval_id is not None
+            await workspace.create_directory(proposal, approval_id, context)
+            return ToolResult(
+                call.id,
+                "Created directories: " + ", ".join(proposal.directories),
+            )
+
+        return PreparedOperation(proposal.action, create)
 
     def _prepare_command(
         self, record: RunningTask, call: ToolCall
