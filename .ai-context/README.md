@@ -47,7 +47,7 @@ You do not need to read every document for every task. Do not inspect code until
 ### Frontend
 
 - `frontend/DEV.md`: interface development guide.
-- `src/amethyst/ui/`: exploratory PySide6 A1/A2/A3 previews; A2 uses fake tasks and A3 a preview-only local conversation repository with fictional sample records; final framework remains `Pending`.
+- `src/amethyst/ui/`: integrated PySide6 desktop, production conversation widgets, independent settings/permission pages, and persistent async worker. Preview launchers have been removed.
 
 ### Backend
 
@@ -60,6 +60,9 @@ You do not need to read every document for every task. Do not inspect code until
 - `docs/implementation_plan.md`: three-person MVP tasks, branch ownership, dependency order, and requirement coverage.
 - `docs/sandbox_runtime.md`: selected Docker runtime/profile, threat boundary, opt-in live tests, and pending platform acceptance.
 - `docs/workstream_b_summary.md`: application/security composition guide and Workstream A/C integration boundaries.
+- `docs/desktop_integration.md`: integrated A/B/C desktop launch, configuration, connector translation, async ownership, and pending acceptance.
+- `docs/integration_architecture.md`: separate model/tool configuration, adapter superclasses, connection catalog, category-specific settings, and built-in extension workflow.
+- `docs/code_structure.md`: repository-wide module boundaries, shared implementations, removal of previews, test-only support, and validation workflow.
 
 ## Maintenance Rules
 

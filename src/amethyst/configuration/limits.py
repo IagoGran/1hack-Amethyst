@@ -20,6 +20,16 @@ class Limits:
     retries: int = 2
 
     def __post_init__(self) -> None:
+        """Validate positive finite limits and the approved retry ceiling.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         import math
 
         for field in fields(self):

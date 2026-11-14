@@ -1,4 +1,4 @@
-"""Shared image asset paths for the exploratory desktop previews."""
+"""Image asset paths for the desktop application."""
 
 from pathlib import Path
 

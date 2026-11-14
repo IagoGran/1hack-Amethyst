@@ -5,12 +5,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import cast
 
-from amethyst.configuration.connections import (
-    ConnectionKind,
-    create_model_provider,
-    create_tool,
-    validate_connection,
-)
+from amethyst.configuration.catalog import MODEL_KINDS
+from amethyst.configuration.connections import validate_connection
+from amethyst.configuration.models import create_model_provider
+from amethyst.configuration.tools import create_tool
 from amethyst.domain.contracts import (
     Connection,
     ConnectionHealth,
@@ -19,7 +17,9 @@ from amethyst.domain.contracts import (
     OperationContext,
 )
 from amethyst.ports.credentials import CredentialStore
+from amethyst.ports.model_provider import ModelProvider
 from amethyst.ports.persistence import ConnectionRepository
+from amethyst.ports.tool import AgentTool
 
 
 class ConnectionService:
@@ -34,6 +34,10 @@ class ConnectionService:
             Persistent connector settings.
         credentials : CredentialStore
             Secure credential lookup service.
+
+        Returns
+        -------
+        None
         """
         self._repository = repository
         self._credentials = credentials
@@ -45,6 +49,10 @@ class ConnectionService:
         -------
         tuple of Connection
             Stored connector settings.
+
+        Parameters
+        ----------
+        None
         """
         return await self._repository.list()
 
@@ -143,6 +151,10 @@ class ConnectionService:
         ------
         ContractError
             If the connection does not exist.
+
+        Returns
+        -------
+        None
         """
         connection = await self._repository.load(connection_id)
         await self._repository.delete(connection.id)
@@ -170,12 +182,8 @@ class ConnectionService:
                 False, "Connection is disabled.", ErrorCode.PERMISSION_DENIED
             )
         try:
-            if ConnectionKind(connection.kind) in {
-                ConnectionKind.OPENAI,
-                ConnectionKind.GEMINI,
-                ConnectionKind.DEEPSEEK,
-                ConnectionKind.OLLAMA,
-            }:
+            tool: ModelProvider | AgentTool
+            if connection.kind in MODEL_KINDS:
                 tool = await create_model_provider(connection, self._credentials)
             else:
                 tool = await create_tool(connection, self._credentials)

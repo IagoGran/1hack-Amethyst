@@ -2,19 +2,21 @@
 
 ## Backend Stack
 
-Python 3.13+ with standard-library DTOs and async protocols. `keyring` supplies the explicitly selected Linux Secret Service backend; provider/connector SDK dependencies remain Pending. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
+Python 3.13+ with standard-library DTOs and async protocols. `keyring` supplies the explicitly selected Linux Secret Service backend; optional connector clients are declared as integration extras. PySide6 supplies the desktop runtime. The distribution/CLI is `1hack-amethyst`; Python imports use `amethyst`.
 
 ## Directory Structure
 
-The package is `src/amethyst/`, divided into `application/`, `domain/`, `ports/`, `adapters/`, `security/`, `skills/`, and `configuration/`. Integration choices are approved below; adapter implementations remain pending.
+See `docs/code_structure.md` for the repository-wide module map. Keep orchestration, model execution, tool authorization/dispatch, budgets, and timing separate. `adapters/codecs.py` owns record serialization, `serialization.py` owns bounded JSON record encoding, and test-only implementations live in `tests/support/`. Public compatibility exports remain where documented; removed preview paths are intentionally unsupported.
+
+The package is `src/amethyst/`, divided into `application/`, `domain/`, `ports/`, `adapters/`, `security/`, `skills/`, `configuration/`, and `ui/`. Provider/connector adapters and durable repositories are implemented. `application/runtime.py` composes them with the agent and security services for the desktop.
 
 ## Local Development
 
-Install runtime and development dependencies with `uv sync --group dev`, then start the provisional CLI with `uv run 1hack-amethyst`.
+Install runtime and development dependencies with `uv sync --group dev`, then start the integrated desktop with `uv run 1hack-amethyst`. See `docs/desktop_integration.md` for configuration and optional connector extras.
 
 ## Build and Packaging
 
-Build the package with `uv build`. The build backend maps the distribution to `src/amethyst/`; `uv run python -m amethyst` and `uv run 1hack-amethyst` use the same provisional launcher.
+Build the package with `uv build`. The build backend maps the distribution to `src/amethyst/`; `uv run python -m amethyst` and `uv run 1hack-amethyst` launch the same PySide6 desktop. `--version` and `--help` work without initializing Qt or opening application data.
 
 ## Environment Variables
 
@@ -22,7 +24,7 @@ See `.ai-context/ENVIRONMENT.md`. Do not include secret values.
 
 ## Endpoints and Interfaces
 
-S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for stream/error/cancellation semantics, approvals, repositories, credential references, and sandbox invocation, and `docs/workstream_b_summary.md` for composing `AgentService`, permission/approval services, workspace tools, credentials, and retention. `adapters/fakes.py` provides deterministic development doubles; approval and sandbox placeholders fail closed. GUI transport, live provider/connector validation, and platform acceptance remain `Pending`.
+S0 async contracts are in `src/amethyst/ports/`, with shared DTOs in `domain/contracts.py`. See `docs/s0_contract_baseline.md` for semantics, `docs/workstream_b_summary.md` for agent/security services, and `docs/desktop_integration.md` for A/B/C composition. `DesktopRuntime` normalizes tool names and retrieval result shapes without changing shared contracts. All application state and async operations stay on the persistent desktop worker loop. Fake and fail-closed implementations are test-only dependencies in `tests/support/`; they are not distributed with the application. Live provider/connector, real-container, and visible platform acceptance remain `Pending`.
 
 Provider adapters use the standard-library HTTP client and stream SSE/NDJSON. PostgreSQL and vector-store clients are optional dependencies declared in the `postgresql`, `qdrant`, `chroma`, `milvus`, and combined `integrations` extras. Install them with `uv sync --extra integrations` when using all adapters. Model IDs, exact per-model context windows, SDK versions, and live-service results remain `Pending`.
 
@@ -40,13 +42,15 @@ Conversations persist locally until deleted, with MVP viewing/resumption/deletio
 - Consume approval on execution and expire it no later than task completion. Read-only session grants end on app exit; revocation blocks further protected actions.
 - Enforce the configurable time, token, retrieval, result-size, and retry defaults in requirements sections 5.5 and 5.6. Pause at the task token budget until explicitly increased.
 - Retry only transient failures, at most twice after the initial attempt; never automatically repeat file mutations or commands with uncertain outcomes.
-- Enforcement is implemented in `application/limits.py`, `configuration/limits.py`, and `security/`. Deterministic tests pass; production composition with A/C and platform acceptance remain Pending.
+- Enforcement is implemented in `application/limits.py`, `configuration/limits.py`, and `security/`. A/B/C composition is implemented; deterministic and headless desktop tests exercise it. Live-service, real-container, visible platform, and performance acceptance remain Pending.
 
 ## Debugging
 
 Tools and workflow: `Pending`.
 
 ## Backend-Specific Conventions
+
+Keep model configuration in `configuration/models.py` and resource-tool configuration in `configuration/tools.py`; share only public metadata and validation helpers. Built-in adapters derive from `ModelAdapter` or `Tool`, respectively, while application injection continues to use structural ports. Register built-ins through the catalog and the matching factory table. Preserve persisted connection kinds and credential references. See `docs/integration_architecture.md` before adding an integration.
 
 See `.ai-context/CONVENTIONS.md` and `.ai-context/TESTING.md`.
 

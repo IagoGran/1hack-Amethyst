@@ -3,7 +3,7 @@
 ## Supported Environments
 
 - Approved MVP platforms: Ubuntu 24.04 LTS on x86-64 and Windows 11 through WSL2.
-- Deployment: local, single-user, standalone desktop window. Desktop framework and packaging: `Pending`.
+- Deployment: local single-user PySide6 standalone window, packaged with the existing uv wheel backend. Native installers remain `Pending`. See `docs/desktop_integration.md` for launch/configuration.
 - Product commands and project tests: Docker Engine/runc on a local Linux daemon, restricted to a read-only approved workspace, with network disabled by default. The selected profile requires cgroup v2, resource controllers, and built-in seccomp; it remains disabled until host validation. See `docs/sandbox_runtime.md`.
 
 ## Environment Differences
@@ -26,7 +26,7 @@ The live sandbox acceptance suite recognizes `AMETHYST_LIVE_SANDBOX=1`, `AMETHYS
 
 ## Approved Operational Defaults
 
-Requirements sections 5.5 and 5.6 are normative. Workstream B implements these controls through `configuration.limits.Limits` and the application/security services. Desktop settings and live adapter wiring remain Pending.
+Requirements sections 5.5 and 5.6 are normative. `configuration.limits.Limits` and application/security services enforce these controls. The desktop Operational limits tab persists numeric settings in a sibling of the application database (`amethyst.settings.json` by default), and applies them to subsequent tasks. Configured adapters are resolved before each task; live-service acceptance remains Pending.
 
 | Setting | Default |
 |---|---|
@@ -51,7 +51,7 @@ Limits are configurable. Budget exhaustion pauses work until explicitly increase
 - Expire redacted diagnostic logs after seven days. Provide an explicit option to save selected logs permanently until deleted, preserving redaction.
 - Store credentials in the OS credential store. If unavailable, keep them only in memory and request them again after restart. Never fall back to plaintext disk storage.
 - Normal logs contain operational metadata, excluding prompts, source code, query results, and tool-result bodies. Keep secrets out of ordinary chat, logs, errors, and configuration exports.
-- The internal database uses SQLite at `$XDG_DATA_HOME/amethyst/amethyst.sqlite3`, falling back to `~/.local/share/amethyst/amethyst.sqlite3`. Repository values persist across process restarts. Encryption, backup, migration beyond schema version 1, and cleanup scheduling remain `Pending`. S0 memory repositories and credentials remain explicit development doubles and do not survive restart. See requirements section 5.7 for acceptance checks.
+- The internal database uses SQLite at `$XDG_DATA_HOME/amethyst/amethyst.sqlite3`, falling back to `~/.local/share/amethyst/amethyst.sqlite3`. Repository values persist across process restarts. Encryption, backup, migration beyond schema version 1, and cleanup scheduling remain `Pending`. Test-only memory repositories and credentials live under `tests/support/` and do not survive restart. See requirements section 5.7 for acceptance checks.
 
 ## Security Considerations
 

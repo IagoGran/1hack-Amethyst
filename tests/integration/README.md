@@ -8,7 +8,7 @@ External services must be explicitly configured; never use real credentials by d
 
 ## Workstream A/C handoff
 
-The following checks remain Pending until the desktop and real adapters are integrated. This table is an executable-contract handoff and acceptance checklist, not a claim that other contributors have reviewed or run it.
+The desktop and real adapters are now composed; see [desktop integration](../../docs/desktop_integration.md). `test_desktop.py` checks Qt, its persistent worker, the real agent, HTTP adapters against local protocol fixtures, SQLite persistence, approval/denial, selected skills, restart/resume/delete, budget resumption, cancellation, and shutdown. `tests/unit/test_runtime.py` covers numeric settings/credential retention and vector handoffs. The table below retains the broader live/platform acceptance checklist; integration tests do not claim contributor review or live-service acceptance.
 
 | Owner | Integration check | Expected evidence |
 |---|---|---|
@@ -19,4 +19,4 @@ The following checks remain Pending until the desktop and real adapters are inte
 | B + C | Inject durable conversation/skill repositories and OS credentials; close the application session. | Restart/resume/delete works; temporary data is removed; read grants expire; secrets never enter ordinary output or configuration. |
 | A + B + C | Validate Secret Service availability and memory-only fallback on native Ubuntu and WSL2. | No plaintext fallback and no credentials surviving a memory-only session restart. |
 
-The existing provisional launcher smoke test does not establish desktop acceptance. Deterministic fakes do not establish live-adapter or durable-storage acceptance.
+The launcher smoke test uses `--version`, independent of a display. Desktop tests use `QT_QPA_PLATFORM=offscreen` and real temporary SQLite databases. They establish deterministic composition and retention behavior; visible Ubuntu/WSLg workflows, real containers, OS credential-store availability, live vendor services, and performance acceptance remain Pending.

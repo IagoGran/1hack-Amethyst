@@ -1,6 +1,6 @@
 # Workstream B Programmer Guide
 
-This guide describes the implemented Workstream B application and security services, including Docker validation work on `feature/agent-security-docker-integration`. Workstream A (desktop UI) and Workstream C (live providers/connectors and durable persistence) remain separate.
+This guide describes the implemented Workstream B application and security services, including Docker validation work on `feature/agent-security-docker-integration`. A/B/C are now composed by `DesktopRuntime` and the integrated PySide6 launcher; see [desktop integration](desktop_integration.md). The service-level examples below remain useful for non-UI callers.
 
 ## What the code provides
 
@@ -14,14 +14,14 @@ This guide describes the implemented Workstream B application and security servi
 
 `amethyst.security.sandbox.DockerSandbox` uses Docker Engine/runc and an image pinned by digest. It mounts only the approved workspace read-only, denies network access by default, drops capabilities, enables `no-new-privileges`, applies resource limits, bounds output, and removes the container after completion, timeout or cancellation. It rejects image-declared volumes, disables image health checks and daemon output logging, requires confirmed terminal state, and waits for cleanup even after repeated cancellation. The runtime must be explicitly enabled after host validation. No host-command fallback exists. Write commands cannot modify the workspace; file changes go through `Workspace` and reviewed diffs. See [runtime profile and acceptance](sandbox_runtime.md).
 
-`amethyst.security.credentials.OSCredentialStore` uses Linux Secret Service when available, with an in-memory fallback. It does not select arbitrary keyring plugins or fall back to plaintext files. `Redactor` and `StreamRedactor` remove known credentials and common token/password patterns before messages and output are persisted or emitted. `DiagnosticStore` accepts only enumerated operational metadata, expires unsaved records after seven days, and supports explicit permanent save/delete. `TaskTemporaryData` removes only directories it created.
+`amethyst.security.credentials.OSCredentialStore` uses Linux Secret Service when available, with an in-memory fallback. It does not select arbitrary keyring plugins or fall back to plaintext files. `security.redaction.Redactor` and `StreamRedactor` remove known credentials and common token/password patterns before messages and output are persisted or emitted. `DiagnosticStore` accepts only enumerated operational metadata, expires unsaved records after seven days, and supports explicit permanent save/delete. `TaskTemporaryData` removes only directories it created.
 
 ## How to compose and use it
 
 The UI or application bootstrap creates a shared session ID, `ApprovalEngine`, `PermissionService`, conversation repository, provider bindings, optional tool bindings and settings, then constructs `AgentService`:
 
 ```python
-from amethyst.adapters.fakes import InMemoryRepository
+from amethyst.adapters.persistence import create_sqlite_repositories
 from amethyst.application.service import AgentService, ProviderBinding
 from amethyst.domain.contracts import Conversation, StartTask
 from amethyst.security.permissions import ApprovalEngine, PermissionService
@@ -29,7 +29,7 @@ from amethyst.security.permissions import ApprovalEngine, PermissionService
 session_id = "app-session-id"
 approvals = ApprovalEngine(session_id)
 permissions = PermissionService(session_id)
-conversations = InMemoryRepository[Conversation]()
+conversations = create_sqlite_repositories().conversations
 service = AgentService(
     session_id=session_id,
     providers={"model-connection": ProviderBinding(provider, "model-id")},
@@ -50,7 +50,7 @@ async for event in service.events(task.id):
 await service.close()
 ```
 
-The Python package requires Python 3.13+. Install development dependencies with `uv sync --group dev`; run the CLI with `uv run 1hack-amethyst`. The current CLI is still a provisional startup. Build with `uv build`. The application service is an in-process async interface; Workstream A must bridge it to the desktop event loop. Its provider, repository, skill, and tool dependencies are injected so Workstream C can supply adapters without coupling them to the agent.
+The Python package requires Python 3.13+. Install dependencies with `uv sync --group dev`; launch the integrated desktop with `uv run 1hack-amethyst`. Build with `uv build`. `DesktopWorker` bridges the in-process async service to Qt through one persistent worker loop and typed signals. Provider, repository, skill, and tool dependencies remain injected.
 
 Register tools as `ToolBinding(tool, resource, kind="text", enabled=True)`. Supported structured result kinds are `sql` (JSON object with a `rows` array) and `retrieval` (JSON object with `chunks`; each chunk has string `content`). Read-only tool access requires a session grant or a one-action approval. Non-read-only tools always require explicit approval. Built-in `workspace.read`, `workspace.edit`, and `sandbox.run` tools are added only when their dependencies are configured.
 
@@ -70,10 +70,10 @@ uv build
 
 ## Integration boundaries and outstanding validation
 
-- The current conversation repository is injected. Production retention across restarts, migrations and deletion coordination depend on Workstream C's durable repositories.
-- Provider settings/secret references and live connectors depend on Workstream C. The application accepts provider/tool bindings; it does not implement vendor SDK adapters.
-- Workstream A must expose user controls for permissions, approval decisions, cancellation and explicit budget increases, and display progress, truncation and terminal outcomes.
+- `DesktopRuntime` injects C's durable conversation/skill/connection repositories; headless restart/resume/delete checks cover the desktop handoff. Migrations beyond version 1 remain Pending.
+- The desktop resolves C's provider settings/secret references and adapters before each task. Connector aliases prevent collisions; retrieval results are normalized to B's structured result contract. Live vendor-service acceptance remains Pending.
+- The integrated desktop exposes permissions, exact-action/diff approval, revocation, cancellation, explicit budget increases, progress, sources, truncation, diagnostics, and terminal outcomes.
 - Docker is disabled until its image, daemon and runtime policy are configured and validated. The real-container suite and profile are ready; execute the documented commands on both target configurations and retain the JUnit environment/results report.
-- This implementation environment is Ubuntu 22.04.5, not the approved Ubuntu 24.04 x86-64 or Windows 11/WSL2 targets. Docker socket access is denied here. Live sandbox and credential-store behavior still require platform acceptance testing. A/C handoff expectations are in `tests/integration/README.md`.
+- Workstream B's original implementation environment was Ubuntu 22.04.5 with denied Docker socket access. Integrated deterministic checks now run under Ubuntu 24.04.3 WSL with Qt offscreen. Live sandbox, OS credential-store behavior, and visible desktop workflows still require platform acceptance testing. A/C handoff coverage and remaining expectations are in `tests/integration/README.md`.
 - The read-only SQL validator is a conservative admission filter, not a substitute for connector-side database permissions. Query dialects and side-effecting functions require adapter-specific tests.
-- Python function length and Numpydoc cleanup was requested separately and is not complete yet. Several application methods still exceed 100 lines, and most functions do not yet have Numpydoc docstrings.
+- The repository-wide refactor separates model execution, authorized tool dispatch, task state, budgets, timing, SQL admission, Docker transport, redaction, and record codecs. Source and test functions now follow Numpydoc and the 100-line limit. See `docs/code_structure.md`.

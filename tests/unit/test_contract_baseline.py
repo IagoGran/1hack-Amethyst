@@ -5,14 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from amethyst.adapters.fakes import (
-    FakeApplicationService,
-    FakeModelProvider,
-    FakeTool,
-    InMemoryRepository,
-    MemoryCredentialStore,
-)
-from amethyst.adapters.sandbox import DisabledSandbox
 from amethyst.domain.contracts import (
     ApprovalRequest,
     ApprovalStatus,
@@ -45,7 +37,15 @@ from amethyst.ports.persistence import (
 )
 from amethyst.ports.sandbox import Sandbox
 from amethyst.ports.tool import AgentTool, ConnectionTester
-from amethyst.security.deny_all import DenyAllApprovalService
+from tests.support.deny_all import DenyAllApprovalService
+from tests.support.disabled_sandbox import DisabledSandbox
+from tests.support.fakes import (
+    FakeApplicationService,
+    FakeModelProvider,
+    FakeTool,
+    InMemoryRepository,
+    MemoryCredentialStore,
+)
 
 CONTEXT = OperationContext("task", "session")
 ACTION = ProposedAction(
@@ -54,7 +54,28 @@ ACTION = ProposedAction(
 
 
 def test_model_stream_and_tool_limits() -> None:
+    """Verify model stream and tool limits.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise model stream and tool limits.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         model: ModelProvider = FakeModelProvider(("One", " two"))
         request = ModelRequest("fixture", (Message("user", "Hello"),))
         events = [event async for event in model.stream(request, CONTEXT)]
@@ -80,7 +101,28 @@ def test_model_stream_and_tool_limits() -> None:
 
 
 def test_task_events_replay_and_isolation() -> None:
+    """Verify task events replay and isolation.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise task events replay and isolation.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         app: ApplicationService = FakeApplicationService(("One", " two"))
         first = await app.start_task(StartTask("conversation", "Hello", "fixture"))
         second = await app.start_task(StartTask("other", "World", "fixture"))
@@ -104,7 +146,29 @@ def test_task_events_replay_and_isolation() -> None:
 
 @pytest.mark.parametrize("start_worker", [False, True])
 def test_cancellation_is_terminal(start_worker: bool) -> None:
+    """Verify cancellation is terminal.
+
+    Parameters
+    ----------
+    start_worker : bool
+        Whether the fixture starts its asynchronous worker.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise cancellation is terminal.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         app: ApplicationService = FakeApplicationService(("never finish",) * 10)
         task = await app.start_task(StartTask("conversation", "Hello", "fixture"))
         if start_worker:
@@ -121,7 +185,28 @@ def test_cancellation_is_terminal(start_worker: bool) -> None:
 
 
 def test_missing_task_and_invalid_budget_fail_clearly() -> None:
+    """Verify missing task and invalid budget fail clearly.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise missing task and invalid budget fail clearly.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         app: ApplicationService = FakeApplicationService()
         with pytest.raises(ContractError) as missing:
             await app.get_task("missing")
@@ -139,7 +224,28 @@ def test_missing_task_and_invalid_budget_fail_clearly() -> None:
 
 
 def test_repository_crud_and_detached_snapshots() -> None:
+    """Verify repository crud and detached snapshots.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise repository crud and detached snapshots.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         conversations: ConversationRepository = InMemoryRepository[Conversation]()
         await conversations.save(Conversation("b", "Second"))
         await conversations.save(
@@ -173,7 +279,28 @@ def test_repository_crud_and_detached_snapshots() -> None:
 
 
 def test_credentials_stay_in_instance_memory() -> None:
+    """Verify credentials stay in instance memory.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise credentials stay in instance memory.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         memory = MemoryCredentialStore()
         credentials: CredentialStore = memory
         await credentials.set("reference", "fixture-secret")
@@ -187,7 +314,28 @@ def test_credentials_stay_in_instance_memory() -> None:
 
 
 def test_placeholder_approvals_always_deny_execution() -> None:
+    """Verify placeholder approvals always deny execution.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise placeholder approvals always deny execution.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         approvals: ApprovalService = DenyAllApprovalService()
         proposal = ApprovalRequest("approval", "task", "session", (ACTION,))
         assert (await approvals.request(proposal)).status == ApprovalStatus.DENIED
@@ -213,12 +361,45 @@ def test_placeholder_approvals_always_deny_execution() -> None:
 def test_approval_requires_explicit_distinct_actions(
     actions: tuple[ProposedAction, ...],
 ) -> None:
+    """Verify approval requires explicit distinct actions.
+
+    Parameters
+    ----------
+    actions : tuple[ProposedAction, ...]
+        Actions explicitly included in the approval proposal.
+
+    Returns
+    -------
+    None
+    """
     with pytest.raises(ValueError):
         ApprovalRequest("approval", "task", "session", actions)
 
 
 def test_disabled_sandbox_has_no_host_fallback(tmp_path: Path) -> None:
+    """Verify disabled sandbox has no host fallback.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise disabled sandbox has no host fallback.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         marker = tmp_path / "must-not-exist"
         sandbox: Sandbox = DisabledSandbox()
         request = SandboxRequest(

@@ -1,57 +1,47 @@
-"""Workstream B orchestration behind the S0 ApplicationService contract."""
+"""Session task orchestration independent of provider and connector protocols."""
 
 import asyncio
-import json
-from collections.abc import AsyncIterator, Awaitable, Callable
-from copy import deepcopy
-from dataclasses import asdict, dataclass, field, replace
-from functools import partial
+from collections.abc import AsyncIterator
+from dataclasses import replace
 from uuid import uuid4
 
-from amethyst.application.limits import (
-    Deadline,
-    TokenBudget,
-    bounded_result,
-    request_tokens,
-    require_read_only_sql,
-    retry_delay,
-    token_bound,
+from amethyst.application.budgets import TokenBudget
+from amethyst.application.model_execution import ModelRunner
+from amethyst.application.state import (
+    ProviderBinding as ProviderBinding,
 )
+from amethyst.application.state import (
+    RunningTask as RunningTask,
+)
+from amethyst.application.state import (
+    ToolBinding as ToolBinding,
+)
+from amethyst.application.timing import Deadline
+from amethyst.application.tool_dispatch import ToolDispatcher
 from amethyst.configuration.limits import Limits
 from amethyst.domain.contracts import (
     ApprovalRequest,
-    ApprovalStatus,
     ContractError,
     Conversation,
     ErrorCode,
     Message,
-    ModelCompleted,
-    ModelRequest,
     OperationContext,
-    ProposedAction,
-    SandboxRequest,
     StartTask,
     TaskEvent,
     TaskEventPayload,
     TaskFailure,
     TaskStateChanged,
-    TextDelta,
-    ToolCall,
-    ToolDefinition,
-    ToolResult,
-    Usage,
 )
+from amethyst.domain.tasks import TERMINAL_STATUSES as TERMINAL
 from amethyst.domain.tasks import Task, TaskStatus
-from amethyst.ports.model_provider import ModelProvider
 from amethyst.ports.persistence import ConversationRepository, SkillRepository
-from amethyst.ports.tool import AgentTool
-from amethyst.security.credentials import Redactor, StreamRedactor
-from amethyst.security.permissions import ApprovalEngine, PermissionService, fingerprint
+from amethyst.security.permissions import ApprovalEngine, PermissionService
+from amethyst.security.redaction import Redactor
 from amethyst.security.retention import DiagnosticStore, TaskTemporaryData
 from amethyst.security.sandbox import DockerSandbox
 from amethyst.security.workspace import Workspace
+from amethyst.skills.selection import select_skills
 
-TERMINAL = {TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.FAILED}
 SYSTEM = (
     "Assess the supplied conversation for already completed and partial work. "
     "Use only relevant context and enabled tools. Before any tool call, explain "
@@ -62,43 +52,8 @@ SYSTEM = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderBinding:
-    provider: ModelProvider
-    model_id: str
-    enabled: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class ToolBinding:
-    tool: AgentTool
-    resource: str
-    kind: str = "text"
-    enabled: bool = True
-
-
-@dataclass
-class RunningTask:
-    task: Task
-    request: StartTask
-    deadline: Deadline
-    budget: TokenBudget
-    events: list[TaskEvent] = field(default_factory=list)
-    changed: asyncio.Condition = field(default_factory=asyncio.Condition)
-    resume: asyncio.Event = field(default_factory=asyncio.Event)
-    worker: asyncio.Task[None] | None = None
-    messages: list[Message] = field(default_factory=list)
-    partial_text: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedOperation:
-    action: ProposedAction | None
-    execute: Callable[[str | None, OperationContext], Awaitable[ToolResult]]
-
-
 class AgentService:
-    """One event loop owns state. Inject C's adapters/repos and A's user controls.
+    """One event loop owns task state and injected application/security services.
 
     User controls call approvals.decide, permissions.grant/revoke, cancel_task,
     and increase_budget. None of these controls are exposed as agent tools.
@@ -121,6 +76,41 @@ class AgentService:
         diagnostics: DiagnosticStore | None = None,
         temporary: TaskTemporaryData | None = None,
     ) -> None:
+        """Compose one session of model, tool, persistence, and security services.
+
+        Parameters
+        ----------
+        session_id : str
+            Identifier of the owning application/security session.
+        providers : dict[str, ProviderBinding]
+            Configured model providers indexed by connection identifier.
+        conversations : ConversationRepository
+            Conversation repository containing detached snapshots.
+        approvals : ApprovalEngine
+            Session-scoped exact-action approval service.
+        permissions : PermissionService
+            Session-scoped read permission service.
+        tools : tuple[ToolBinding, ...]
+            Enabled tool bindings supplied to the agent.
+        skills : SkillRepository | None
+            Optional repository of reusable skill instructions.
+        workspace : Workspace | None
+            Approved workspace file service or directory boundary.
+        sandbox : DockerSandbox | None
+            Optional container-only execution service.
+        limits : Limits | None
+            Validated operational resource limits.
+        redactor : Redactor | None
+            Credential filter shared by the session.
+        diagnostics : DiagnosticStore | None
+            Optional metadata-only diagnostic store.
+        temporary : TaskTemporaryData | None
+            Optional owner of task-local disposable data.
+
+        Returns
+        -------
+        None
+        """
         if approvals.session_id != session_id or permissions.session_id != session_id:
             raise ValueError(
                 "Security services must belong to the application session."
@@ -144,14 +134,41 @@ class AgentService:
         self.temporary = temporary or TaskTemporaryData()
         self._tasks: dict[str, RunningTask] = {}
         self._closed = False
+        self._tool_dispatcher = ToolDispatcher(self)
+        self._model_runner = ModelRunner(self)
 
     def _record(self, task_id: str) -> RunningTask:
+        """Find task-local state or raise a safe not-found failure.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task being inspected or controlled.
+
+        Returns
+        -------
+        RunningTask
+            Value produced by the operation.
+        """
         try:
             return self._tasks[task_id]
         except KeyError:
             raise ContractError(ErrorCode.NOT_FOUND, "Task not found.") from None
 
     async def _emit(self, record: RunningTask, payload: TaskEventPayload) -> None:
+        """Append a sequenced event and wake task subscribers atomically.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+        payload : TaskEventPayload
+            Operation-specific data; never log it wholesale.
+
+        Returns
+        -------
+        None
+        """
         async with record.changed:
             if isinstance(payload, TaskStateChanged):
                 record.task = replace(record.task, status=payload.status)
@@ -163,11 +180,38 @@ class AgentService:
     async def _state(
         self, record: RunningTask, status: TaskStatus, message: str = ""
     ) -> None:
+        """Publish a redacted task status and update the task snapshot.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+        status : TaskStatus
+            Visible task or diagnostic status.
+        message : str
+            Display-safe text associated with the operation.
+
+        Returns
+        -------
+        None
+        """
         await self._emit(
             record, TaskStateChanged(status, self.redactor.redact(message))
         )
 
     async def start_task(self, request: StartTask) -> Task:
+        """Start a task or return the identical request already running.
+
+        Parameters
+        ----------
+        request : StartTask
+            Typed request describing the operation and its scope.
+
+        Returns
+        -------
+        Task
+            Current immutable task snapshot.
+        """
         if self._closed:
             raise ContractError(ErrorCode.UNAVAILABLE, "Application session is closed.")
         if not request.request.strip() or not request.conversation_id:
@@ -207,11 +251,37 @@ class AgentService:
         return task
 
     async def get_task(self, task_id: str) -> Task:
+        """Return the latest immutable task snapshot.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task being inspected or controlled.
+
+        Returns
+        -------
+        Task
+            Current immutable task snapshot.
+        """
         return self._record(task_id).task
 
     async def events(
         self, task_id: str, after_sequence: int = 0
     ) -> AsyncIterator[TaskEvent]:
+        """Replay and follow sequenced events until the task becomes terminal.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task being inspected or controlled.
+        after_sequence : int
+            Last event sequence already consumed by the subscriber.
+
+        Yields
+        ------
+        TaskEvent
+            Ordered values produced by the operation.
+        """
         record = self._record(task_id)
         if after_sequence < 0:
             raise ContractError(
@@ -233,6 +303,18 @@ class AgentService:
                 return
 
     async def cancel_task(self, task_id: str) -> Task:
+        """Cancel task work and await cleanup before acknowledging its state.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task being inspected or controlled.
+
+        Returns
+        -------
+        Task
+            Current immutable task snapshot.
+        """
         record = self._record(task_id)
         if record.task.status in TERMINAL:
             return record.task
@@ -248,6 +330,20 @@ class AgentService:
         return record.task
 
     async def increase_budget(self, task_id: str, additional_tokens: int) -> Task:
+        """Resume a budget-paused task after an explicit positive increase.
+
+        Parameters
+        ----------
+        task_id : str
+            Identifier of the task being inspected or controlled.
+        additional_tokens : int
+            Positive token increase explicitly requested by the user.
+
+        Returns
+        -------
+        Task
+            Current immutable task snapshot.
+        """
         record = self._record(task_id)
         if record.task.status != TaskStatus.PAUSED_FOR_BUDGET:
             raise ContractError(
@@ -258,6 +354,16 @@ class AgentService:
         return record.task
 
     async def close(self) -> None:
+        """Cancel tasks, expire authorization, and release session-owned data.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self._closed = True
         for task_id in tuple(self._tasks):
             await self.cancel_task(task_id)
@@ -268,6 +374,20 @@ class AgentService:
             self.diagnostics.expire()
 
     def _context(self, record: RunningTask, timeout: float) -> OperationContext:
+        """Build an operation scope bounded by the remaining task deadline.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+        timeout : float
+            Maximum operation duration in seconds.
+
+        Returns
+        -------
+        OperationContext
+            Task/session scope with bounded operation limits.
+        """
         return OperationContext(
             record.task.id,
             self.session_id,
@@ -276,6 +396,19 @@ class AgentService:
         )
 
     async def _run(self, record: RunningTask, binding: ProviderBinding) -> None:
+        """Coordinate conversation turns and finalize every terminal outcome.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+        binding : ProviderBinding
+            Selected provider or tool configuration.
+
+        Returns
+        -------
+        None
+        """
         outcome = TaskStatus.COMPLETED
         failure: TaskFailure | None = None
         try:
@@ -285,57 +418,13 @@ class AgentService:
                 TaskStatus.RUNNING,
                 "Assessing conversation context and previous work.",
             )
-            try:
-                conversation = await record.deadline.run(
-                    lambda: self.conversations.load(record.task.conversation_id),
-                    self.limits.tool_seconds,
-                )
-            except ContractError as error:
-                if error.code != ErrorCode.NOT_FOUND:
-                    raise
-                conversation = Conversation(
-                    record.task.conversation_id, record.task.request[:80]
-                )
-            record.messages = [
-                replace(m, content=self.redactor.redact(m.content))
-                for m in conversation.messages
-            ]
-            record.messages.append(Message("user", record.task.request))
+            conversation = await self._load_conversation(record)
             instructions = await self._instructions(record)
             await self._save(record, conversation.title)
-            while True:
-                record.deadline.remaining()
-                text, completed = await self._model(record, binding, instructions)
-                record.messages.append(
-                    Message("assistant", text, tool_calls=completed.tool_calls)
-                )
-                record.partial_text = ""
-                await self._save(record, conversation.title)
-                if not completed.tool_calls:
-                    break
-                if not text.strip():
-                    raise ContractError(
-                        ErrorCode.INVALID_INPUT,
-                        "A visible plan is required before tool execution.",
-                    )
-                ids = [call.id for call in completed.tool_calls]
-                if len(ids) != len(set(ids)):
-                    raise ContractError(
-                        ErrorCode.INVALID_INPUT,
-                        "Model returned duplicate tool call IDs.",
-                    )
-                for call in completed.tool_calls:
-                    result = await self._tool(record, call)
-                    await self._emit(record, result)
-                    record.messages.append(
-                        Message("tool", result.content, tool_call_id=call.id)
-                    )
-                    await self._save(record, conversation.title)
-                await self._state(
-                    record,
-                    TaskStatus.RUNNING,
-                    "Inspecting tool results and validating the outcome.",
-                )
+            while await self._run_turn(
+                record, binding, instructions, conversation.title
+            ):
+                pass
         except asyncio.CancelledError:
             outcome = TaskStatus.CANCELLED
         except ContractError as error:
@@ -348,50 +437,173 @@ class AgentService:
                 "Task failed; inspect connection settings or permissions.",
             )
         finally:
+            await self._finalize(record, outcome, failure)
+
+    async def _load_conversation(self, record: RunningTask) -> Conversation:
+        """Restore redacted conversation context and append the current user turn.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task request and conversation identifier.
+
+        Returns
+        -------
+        Conversation
+            Existing conversation or a new record with a request-derived title.
+        """
+        try:
+            conversation = await record.deadline.run(
+                lambda: self.conversations.load(record.task.conversation_id),
+                self.limits.tool_seconds,
+            )
+        except ContractError as error:
+            if error.code != ErrorCode.NOT_FOUND:
+                raise
+            conversation = Conversation(
+                record.task.conversation_id, record.task.request[:80]
+            )
+        record.messages = [
+            replace(m, content=self.redactor.redact(m.content))
+            for m in conversation.messages
+        ]
+        record.messages.append(Message("user", record.task.request))
+        return conversation
+
+    async def _run_turn(
+        self,
+        record: RunningTask,
+        binding: ProviderBinding,
+        instructions: str,
+        title: str,
+    ) -> bool:
+        """Generate one response and execute only its validated, planned calls.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Current conversation and task state.
+        binding : ProviderBinding
+            Selected provider and model.
+        instructions : str
+            Selected system and skill instructions.
+        title : str
+            Conversation title retained between turns.
+
+        Returns
+        -------
+        bool
+            Whether tool results require another model turn.
+        """
+        record.deadline.remaining()
+        text, completed = await self._model_runner.generate(
+            record, binding, instructions
+        )
+        record.messages.append(
+            Message("assistant", text, tool_calls=completed.tool_calls)
+        )
+        record.partial_text = ""
+        await self._save(record, title)
+        if not completed.tool_calls:
+            return False
+        if not text.strip():
+            raise ContractError(
+                ErrorCode.INVALID_INPUT,
+                "A visible plan is required before tool execution.",
+            )
+        ids = [call.id for call in completed.tool_calls]
+        if len(ids) != len(set(ids)):
+            raise ContractError(
+                ErrorCode.INVALID_INPUT,
+                "Model returned duplicate tool call IDs.",
+            )
+        for call in completed.tool_calls:
+            result = await self._tool_dispatcher.execute(record, call)
+            await self._emit(record, result)
+            record.messages.append(
+                Message("tool", result.content, tool_call_id=call.id)
+            )
+            await self._save(record, title)
+        await self._state(
+            record,
+            TaskStatus.RUNNING,
+            "Inspecting tool results and validating the outcome.",
+        )
+        return True
+
+    async def _finalize(
+        self, record: RunningTask, outcome: TaskStatus, failure: TaskFailure | None
+    ) -> None:
+        """Persist interrupted output, clean temporary data, and expire approvals.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task being finalized.
+        outcome : TaskStatus
+            Intended terminal status.
+        failure : TaskFailure or None
+            Redacted failure event, when applicable.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            # Preserve an interrupted partial response only as conversation content.
+            if record.partial_text:
+                record.messages.append(
+                    Message("assistant", self.redactor.redact(record.partial_text))
+                )
+            if record.messages:
+                await self._save(record, record.task.request[:80])
+        except Exception:
+            outcome = TaskStatus.FAILED
+            failure = TaskFailure(
+                ErrorCode.UNAVAILABLE, "Task conversation could not be saved."
+            )
+        try:
+            self.temporary.cleanup(record.task.id)
+        except Exception:
+            outcome = TaskStatus.FAILED
+            failure = TaskFailure(ErrorCode.UNAVAILABLE, "Temporary cleanup failed.")
+        record.partial_text = ""
+        record.request = replace(record.request, request=record.task.request)
+        await self.approvals.expire_task(record.task.id)
+        for index, event in enumerate(record.events):
+            if isinstance(event.payload, ApprovalRequest):
+                expired = await self.approvals.inspect(event.payload.id)
+                record.events[index] = replace(event, payload=expired.request)
+        if failure:
+            await self._emit(record, failure)
+        if self.diagnostics:
             try:
-                # Preserve an interrupted partial response only as conversation content.
-                if record.partial_text:
-                    record.messages.append(
-                        Message("assistant", self.redactor.redact(record.partial_text))
-                    )
-                if record.messages:
-                    await self._save(record, record.task.request[:80])
+                self.diagnostics.record("task", status=outcome.value)
             except Exception:
                 outcome = TaskStatus.FAILED
-                failure = TaskFailure(
-                    ErrorCode.UNAVAILABLE, "Task conversation could not be saved."
+                await self._emit(
+                    record,
+                    TaskFailure(
+                        ErrorCode.UNAVAILABLE, "Diagnostic storage is unavailable."
+                    ),
                 )
-            try:
-                self.temporary.cleanup(record.task.id)
-            except Exception:
-                outcome = TaskStatus.FAILED
-                failure = TaskFailure(
-                    ErrorCode.UNAVAILABLE, "Temporary cleanup failed."
-                )
-            record.partial_text = ""
-            record.request = replace(record.request, request=record.task.request)
-            await self.approvals.expire_task(record.task.id)
-            for index, event in enumerate(record.events):
-                if isinstance(event.payload, ApprovalRequest):
-                    expired = await self.approvals.inspect(event.payload.id)
-                    record.events[index] = replace(event, payload=expired.request)
-            if failure:
-                await self._emit(record, failure)
-            if self.diagnostics:
-                try:
-                    self.diagnostics.record("task", status=outcome.value)
-                except Exception:
-                    outcome = TaskStatus.FAILED
-                    await self._emit(
-                        record,
-                        TaskFailure(
-                            ErrorCode.UNAVAILABLE, "Diagnostic storage is unavailable."
-                        ),
-                    )
-            await self._state(record, outcome)
+        await self._state(record, outcome)
 
     async def _save(self, record: RunningTask, title: str) -> None:
         # Bound persistence latency, including cancelled/timed-out finalization.
+        """Persist the redacted conversation within a bounded timeout.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+        title : str
+            Human-readable conversation or page title.
+
+        Returns
+        -------
+        None
+        """
         async with asyncio.timeout(self.limits.tool_seconds):
             await self.conversations.save(
                 Conversation(
@@ -402,28 +614,29 @@ class AgentService:
             )
 
     async def _instructions(self, record: RunningTask) -> str:
+        """Combine system instructions with enabled explicit or matching skills.
+
+        Parameters
+        ----------
+        record : RunningTask
+            Task-local or persisted record owned by the operation.
+
+        Returns
+        -------
+        str
+            Text produced by the operation.
+        """
         selected: list[str] = []
         if self.skills is not None:
             values = await record.deadline.run(
                 self.skills.list, self.limits.tool_seconds
             )
-            by_id = {skill.id: skill for skill in values}
-            if any(
-                key not in by_id or not by_id[key].enabled
-                for key in record.request.skill_ids
-            ):
-                raise ContractError(
-                    ErrorCode.INVALID_INPUT, "Selected skill is unavailable."
+            selected = [
+                self.redactor.redact(skill.instructions)
+                for skill in select_skills(
+                    values, record.request.skill_ids, record.task.request
                 )
-            for skill in values:
-                # Deliberately small, documented literal condition grammar.
-                match = (
-                    skill.condition
-                    and skill.condition.startswith("contains:")
-                    and skill.condition[9:] in record.task.request
-                )
-                if skill.enabled and (skill.id in record.request.skill_ids or match):
-                    selected.append(self.redactor.redact(skill.instructions))
+            ]
         elif record.request.skill_ids:
             raise ContractError(
                 ErrorCode.UNAVAILABLE, "Skill repository is unavailable."
@@ -431,423 +644,3 @@ class AgentService:
         return SYSTEM + (
             "\nSelected skills:\n" + "\n".join(selected) if selected else ""
         )
-
-    def _definitions(self) -> tuple[ToolDefinition, ...]:
-        definitions = [
-            binding.tool.definition
-            for binding in self.tools.values()
-            if binding.enabled
-        ]
-        if self.workspace:
-            definitions.extend(
-                (
-                    ToolDefinition(
-                        "workspace.read",
-                        "Read an explicitly permitted UTF-8 file.",
-                        {
-                            "type": "object",
-                            "properties": {"path": {"type": "string"}},
-                            "required": ["path"],
-                        },
-                    ),
-                    ToolDefinition(
-                        "workspace.edit",
-                        "Propose a reviewed file change; null content deletes.",
-                        {
-                            "type": "object",
-                            "properties": {
-                                "path": {"type": "string"},
-                                "content": {"type": ["string", "null"]},
-                            },
-                            "required": ["path", "content"],
-                        },
-                        read_only=False,
-                    ),
-                )
-            )
-        if self.sandbox:
-            definitions.append(
-                ToolDefinition(
-                    "sandbox.run",
-                    "Run an approved command in a read-only container workspace.",
-                    {
-                        "type": "object",
-                        "properties": {
-                            "argv": {"type": "array", "items": {"type": "string"}},
-                            "working_directory": {"type": "string"},
-                            "network_enabled": {"type": "boolean"},
-                        },
-                        "required": ["argv"],
-                    },
-                    read_only=False,
-                )
-            )
-        return tuple(definitions)
-
-    async def _reserve(self, record: RunningTask, tokens: int) -> None:
-        while not record.budget.can_reserve(tokens):
-            record.resume.clear()
-            await self._state(
-                record,
-                TaskStatus.PAUSED_FOR_BUDGET,
-                "Increase the token budget to continue.",
-            )
-            await record.deadline.run(record.resume.wait, record.deadline.remaining())
-        if record.task.status == TaskStatus.PAUSED_FOR_BUDGET:
-            await self._state(record, TaskStatus.RUNNING, "Token budget increased.")
-
-    async def _model(
-        self, record: RunningTask, binding: ProviderBinding, instructions: str
-    ) -> tuple[str, ModelCompleted]:
-        capabilities = await record.deadline.run(
-            lambda: binding.provider.capabilities(binding.model_id),
-            self.limits.tool_seconds,
-        )
-        request = ModelRequest(
-            binding.model_id,
-            (Message("system", instructions), *record.messages),
-            self._definitions() if capabilities.tool_calls else (),
-            self.limits.input_tokens,
-            self.limits.output_tokens,
-            self.limits.model_idle_seconds,
-            self.limits.model_total_seconds,
-        )
-        estimated = request_tokens(request)
-        output_limit = min(
-            self.limits.output_tokens, capabilities.context_tokens - estimated
-        )
-        if estimated > self.limits.input_tokens or output_limit <= 0:
-            raise ContractError(
-                ErrorCode.INVALID_INPUT,
-                "Conversation exceeds model input or context capacity.",
-            )
-        request = replace(request, max_output_tokens=output_limit)
-        reserved = estimated + output_limit
-        for attempt in range(self.limits.retries + 1):
-            await self._reserve(record, reserved)
-            context = self._context(record, self.limits.model_total_seconds)
-            stream = binding.provider.stream(request, context)
-            completed: ModelCompleted | None = None
-            charged = False
-            text = ""
-            visible = False
-            sanitizer = StreamRedactor(self.redactor)
-            try:
-                async with asyncio.timeout(context.timeout_seconds):
-                    while True:
-                        try:
-                            event = await asyncio.wait_for(
-                                anext(stream), self.limits.model_idle_seconds
-                            )
-                        except StopAsyncIteration:
-                            break
-                        if completed is not None:
-                            raise ContractError(
-                                ErrorCode.INVALID_INPUT,
-                                "Provider emitted data after completion.",
-                            )
-                        if isinstance(event, TextDelta):
-                            text += event.text
-                            record.partial_text = text
-                            if token_bound(text) > output_limit:
-                                raise ContractError(
-                                    ErrorCode.INVALID_INPUT,
-                                    "Model output exceeds the reserved limit.",
-                                )
-                            safe_text = sanitizer.feed(event.text)
-                            if safe_text:
-                                visible = True
-                                await self._emit(record, TextDelta(safe_text))
-                        elif isinstance(event, ModelCompleted):
-                            completed = event
-                        else:
-                            raise ContractError(
-                                ErrorCode.INVALID_INPUT, "Invalid model event."
-                            )
-                if completed is None:
-                    raise ContractError(
-                        ErrorCode.UNAVAILABLE,
-                        "Model stream ended without a completion.",
-                    )
-                charged = True
-                usage = record.budget.charge(completed.usage, reserved)
-                await self._emit(record, usage)
-                if (
-                    usage.input_tokens > estimated
-                    or usage.output_tokens > output_limit
-                    or token_bound(
-                        json.dumps([asdict(c) for c in completed.tool_calls])
-                    )
-                    + token_bound(text)
-                    > output_limit
-                    and completed.tool_calls
-                ):
-                    raise ContractError(
-                        ErrorCode.INVALID_INPUT,
-                        "Provider exceeded the reserved token limits.",
-                        usage=Usage(),
-                    )
-                for call in completed.tool_calls:
-                    if self.redactor.redact(json.dumps(asdict(call))) != json.dumps(
-                        asdict(call)
-                    ):
-                        raise ContractError(
-                            ErrorCode.PERMISSION_DENIED,
-                            "Model tool arguments contain protected credentials.",
-                            usage=Usage(),
-                        )
-                remaining = sanitizer.finish()
-                if remaining:
-                    await self._emit(record, TextDelta(remaining))
-                return self.redactor.redact(text), completed
-            except (TimeoutError, ContractError) as raw:
-                error = (
-                    raw
-                    if isinstance(raw, ContractError)
-                    else ContractError(
-                        ErrorCode.TIMEOUT, "Model request timed out.", transient=True
-                    )
-                )
-                if not charged:
-                    charged = True
-                    usage = record.budget.charge(
-                        completed.usage if completed else error.usage,
-                        reserved,
-                    )
-                    await self._emit(record, usage)
-                delay = retry_delay(
-                    error, attempt, self.limits.retries, safe=not visible
-                )
-                if delay is None:
-                    raise error from None
-                record.partial_text = ""
-                await self._state(
-                    record, TaskStatus.RUNNING, "Retrying a transient model failure."
-                )
-                await record.deadline.run(
-                    partial(asyncio.sleep, delay), record.deadline.remaining()
-                )
-            finally:
-                if not charged:
-                    usage = record.budget.charge(None, reserved)
-                    await self._emit(record, usage)
-                closer = getattr(stream, "aclose", None)
-                if closer is not None:
-                    async with asyncio.timeout(self.limits.tool_seconds):
-                        await closer()
-        raise AssertionError("Retry loop exhausted without an outcome")
-
-    async def _tool(self, record: RunningTask, call: ToolCall) -> ToolResult:
-        call = deepcopy(call)
-        operation = self._prepare(record, call)
-        approval_id: str | None = None
-        if operation.action is not None:
-            if any(
-                self.redactor.redact(change.diff) != change.diff
-                for change in operation.action.changes
-            ):
-                raise ContractError(
-                    ErrorCode.PERMISSION_DENIED,
-                    "Proposed diff contains protected credentials.",
-                )
-            proposal = ApprovalRequest(
-                uuid4().hex, record.task.id, self.session_id, (operation.action,)
-            )
-            await self.approvals.request(proposal)
-            await self._state(
-                record,
-                TaskStatus.AWAITING_APPROVAL,
-                "Waiting for review of the listed action.",
-            )
-            await self._emit(record, proposal)
-            decision = await record.deadline.approval_wait(
-                lambda: self.approvals.wait(proposal.id)
-            )
-            if decision.status != ApprovalStatus.GRANTED:
-                raise ContractError(
-                    ErrorCode.PERMISSION_DENIED,
-                    "Action approval was denied or revoked.",
-                )
-            approval_id = proposal.id
-            await self._state(
-                record, TaskStatus.RUNNING, "Executing the approved action."
-            )
-        timeout = (
-            self.limits.command_seconds
-            if call.name == "sandbox.run"
-            else self.limits.tool_seconds
-        )
-        context = self._context(record, timeout)
-        result = await record.deadline.run(
-            lambda: operation.execute(approval_id, context), timeout
-        )
-        if result.call_id != call.id:
-            raise ContractError(
-                ErrorCode.INVALID_INPUT, "Tool returned an unrelated call ID."
-            )
-        return replace(
-            result,
-            content=self.redactor.redact(result.content),
-            sources=tuple(
-                replace(
-                    s,
-                    identifier=self.redactor.redact(s.identifier),
-                    title=self.redactor.redact(s.title),
-                    url=self.redactor.redact(s.url) if s.url else None,
-                )
-                for s in result.sources
-            ),
-        )
-
-    def _prepare(self, record: RunningTask, call: ToolCall) -> PreparedOperation:
-        if call.name == "workspace.read" and self.workspace is not None:
-            workspace = self.workspace
-            path = self._string(call, "path")
-
-            async def read(
-                approval_id: str | None, context: OperationContext
-            ) -> ToolResult:
-                return bounded_result(
-                    ToolResult(call.id, workspace.read(path, context)), self.limits
-                )
-
-            return PreparedOperation(None, read)
-        if call.name == "workspace.edit" and self.workspace is not None:
-            workspace = self.workspace
-            path = self._string(call, "path")
-            if "content" not in call.arguments or not isinstance(
-                call.arguments["content"], str | type(None)
-            ):
-                raise ContractError(
-                    ErrorCode.INVALID_INPUT, "File content must be text or null."
-                )
-            edit = workspace.propose(
-                path,
-                call.arguments["content"],
-                self._context(record, self.limits.tool_seconds),
-            )
-
-            async def apply(
-                approval_id: str | None, context: OperationContext
-            ) -> ToolResult:
-                assert approval_id is not None
-                await workspace.apply(edit, approval_id, context)
-                return ToolResult(call.id, "Reviewed file change applied.")
-
-            return PreparedOperation(edit.action, apply)
-        if call.name == "sandbox.run" and self.sandbox is not None:
-            sandbox = self.sandbox
-            argv = call.arguments.get("argv")
-            network = call.arguments.get("network_enabled", False)
-            if (
-                not isinstance(argv, list)
-                or not all(isinstance(a, str) for a in argv)
-                or not isinstance(network, bool)
-            ):
-                raise ContractError(
-                    ErrorCode.INVALID_INPUT, "Invalid command arguments."
-                )
-            request = SandboxRequest(
-                call.id,
-                "",
-                "",
-                sandbox.workspace,
-                tuple(str(a) for a in argv),
-                self._string(call, "working_directory", "."),
-                network,
-                self.limits.command_seconds,
-                self.limits.output_bytes,
-            )
-            action = sandbox.proposal(request)
-
-            async def run(
-                approval_id: str | None, context: OperationContext
-            ) -> ToolResult:
-                assert approval_id is not None
-                result = await sandbox.run(
-                    replace(
-                        request, approval_id=approval_id, fingerprint=action.fingerprint
-                    ),
-                    context,
-                )
-                if result.outcome != "completed":
-                    code = (
-                        ErrorCode.TIMEOUT
-                        if result.outcome == "timeout"
-                        else ErrorCode.OUTCOME_UNKNOWN
-                    )
-                    raise ContractError(code, "Sandbox command did not complete.")
-                return bounded_result(
-                    ToolResult(
-                        call.id, json.dumps(asdict(result)), truncated=result.truncated
-                    ),
-                    self.limits,
-                )
-
-            return PreparedOperation(action, run)
-        binding = self.tools.get(call.name)
-        if binding is None or not binding.enabled:
-            raise ContractError(
-                ErrorCode.PERMISSION_DENIED, "Tool is unavailable or disabled."
-            )
-        if binding.kind == "sql":
-            require_read_only_sql(self._string(call, "query"))
-        context = self._context(record, self.limits.tool_seconds)
-        definition = binding.tool.definition
-        session_granted = False
-        if definition.read_only:
-            try:
-                self.permissions.require(context, call.name, binding.resource)
-                session_granted = True
-            except ContractError:
-                pass
-        action = ProposedAction(
-            call.id,
-            call.name,
-            f"Invoke {call.name} with {json.dumps(call.arguments, sort_keys=True)}",
-            (binding.resource,),
-            fingerprint({"call": asdict(call), "resource": binding.resource}),
-            high_impact=not binding.tool.definition.read_only,
-        )
-
-        async def invoke(
-            approval_id: str | None, context: OperationContext
-        ) -> ToolResult:
-            if approval_id is not None:
-                await self.approvals.consume(
-                    approval_id, call.id, action.fingerprint, context
-                )
-            for attempt in range(self.limits.retries + 1):
-                if session_granted:
-                    self.permissions.require(context, call.name, binding.resource)
-                if (
-                    not self.tools[call.name].enabled
-                    or self.tools[call.name] != binding
-                    or binding.tool.definition != definition
-                ):
-                    raise ContractError(
-                        ErrorCode.PERMISSION_DENIED, "Tool was disabled."
-                    )
-                try:
-                    raw = await binding.tool.execute(call, context)
-                    return bounded_result(raw, self.limits, binding.kind)
-                except ContractError as error:
-                    delay = retry_delay(
-                        error,
-                        attempt,
-                        self.limits.retries,
-                        safe=session_granted and binding.tool.definition.read_only,
-                    )
-                    if delay is None:
-                        raise
-                    await asyncio.sleep(delay)
-            raise AssertionError("Retry loop exhausted without an outcome")
-
-        return PreparedOperation(None if session_granted else action, invoke)
-
-    @staticmethod
-    def _string(call: ToolCall, name: str, default: str | None = None) -> str:
-        value = call.arguments.get(name, default)
-        if not isinstance(value, str):
-            raise ContractError(ErrorCode.INVALID_INPUT, f"{name} must be text.")
-        return value

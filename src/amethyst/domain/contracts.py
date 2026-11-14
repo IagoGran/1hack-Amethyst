@@ -55,6 +55,25 @@ class ContractError(Exception):
         retry_after_seconds: float | None = None,
         usage: Usage | None = None,
     ) -> None:
+        """Create a display-safe boundary failure with retry and usage metadata.
+
+        Parameters
+        ----------
+        code : ErrorCode
+            Stable boundary error classification.
+        message : str
+            Display-safe text associated with the operation.
+        transient : bool
+            Whether the failure may permit a safe retry.
+        retry_after_seconds : float | None
+            Optional provider-requested delay before a safe retry.
+        usage : Usage | None
+            Observed provider usage, or None when unknown.
+
+        Returns
+        -------
+        None
+        """
         super().__init__(message)
         self.code = code
         self.transient = transient
@@ -182,6 +201,16 @@ class ApprovalRequest:
     actions: tuple[ProposedAction, ...]
 
     def __post_init__(self) -> None:
+        """Reject empty approval batches and duplicate action identifiers.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         if not self.actions or len({a.id for a in self.actions}) != len(self.actions):
             raise ValueError(
                 "An approval must list distinct actions and cannot be empty."
@@ -258,8 +287,9 @@ class Skill:
 class Connection:
     """Non-secret settings only; credential_ref is an opaque lookup key.
 
-    Adapter-specific validation is C5 work. Never put credentials in options or
-    endpoint URLs. This DTO alone does not sanitize untrusted configuration.
+    Adapter-specific validation belongs to the configuration boundary. Never put
+    credentials in options or endpoint URLs. This DTO alone does not sanitize
+    untrusted configuration.
     """
 
     id: str
@@ -281,7 +311,7 @@ class SandboxRequest:
     """Container-only invocation; approval_id does not itself authorize execution.
 
     No host executable fallback is permitted. File mutations still require diff
-    review; B4 must select a staging/enforcement design before enabling execution.
+    review; enabling execution requires explicit host and image validation.
     """
 
     action_id: str

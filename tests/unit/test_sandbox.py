@@ -97,6 +97,20 @@ class Transport:
 async def configured(
     root: Path, mode: str = "success"
 ) -> tuple[DockerSandbox, SandboxRequest, Transport]:
+    """Provide the configured test fixture.
+
+    Parameters
+    ----------
+    root : Path
+        Application-owned data directory or approved workspace root.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    tuple[DockerSandbox, SandboxRequest, Transport]
+        Value produced by the operation.
+    """
     engine = ApprovalEngine("session")
     engine.open_task("task")
     transport = Transport(mode)
@@ -318,7 +332,31 @@ def test_container_state_must_confirm_completion(tmp_path: Path, mode: str) -> N
     "mode", ["create_failure", "inspect_failure", "invalid_status", "cleanup_failure"]
 )
 def test_sandbox_uncertain_failures_do_not_retry(tmp_path: Path, mode: str) -> None:
+    """Verify sandbox uncertain failures do not retry.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+    mode : str
+        File permissions or fixture execution mode.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise sandbox uncertain failures do not retry.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         sandbox, request, transport = await configured(tmp_path, mode)
         with pytest.raises(ContractError):
             await sandbox.run(request, CTX)
@@ -329,7 +367,29 @@ def test_sandbox_uncertain_failures_do_not_retry(tmp_path: Path, mode: str) -> N
 
 
 def test_sandbox_timeout_and_cancellation_stop_container(tmp_path: Path) -> None:
+    """Verify sandbox timeout and cancellation stop container.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise sandbox timeout and cancellation stop container.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         sandbox, request, transport = await configured(tmp_path, "timeout")
         assert (await sandbox.run(request, CTX)).outcome == "timeout"
         assert transport.calls[-1][0] == "rm"
@@ -345,7 +405,29 @@ def test_sandbox_timeout_and_cancellation_stop_container(tmp_path: Path) -> None
 
 
 def test_sandbox_scope_changes_and_disabled_runtime(tmp_path: Path) -> None:
+    """Verify sandbox scope changes and disabled runtime.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Disposable directory managed by pytest.
+
+    Returns
+    -------
+    None
+    """
+
     async def scenario() -> None:
+        """Exercise sandbox scope changes and disabled runtime.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         sandbox, request, transport = await configured(tmp_path)
         for changed in [
             replace(request, argv=("different",)),

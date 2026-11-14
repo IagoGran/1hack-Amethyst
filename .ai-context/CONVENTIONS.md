@@ -10,7 +10,7 @@
 
 ## Repository Structure
 
-The Python application lives in `src/amethyst/`: `application/` for use cases, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, and `configuration/` for configuration. The distribution/CLI stays `1hack-amethyst`; normal Python imports use `amethyst`. Shared DTOs are in `domain/contracts.py`, async protocols are in `ports/`, and explicit development doubles are in `adapters/fakes.py`. A standalone desktop GUI is approved; its framework, implementation, and location remain `Pending`. `src/llm/agent.py` is pre-existing code; migration or removal is `Pending`.
+The Python application lives in `src/amethyst/`: `application/` for use cases and runtime composition, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, `configuration/` for settings, and `ui/` for the PySide6 desktop. The distribution/CLI stays `1hack-amethyst`; normal Python imports use `amethyst`. Shared DTOs are in `domain/contracts.py`, async protocols are in `ports/`, and test-only doubles and vendor fixtures are in `tests/support/`, outside the application package. The launcher uses real services; preview launchers and their exclusive UI/data modules have been removed. All application asyncio state stays on the persistent desktop worker loop. The empty `src/llm/agent.py` and obsolete `src/main.py` entry point have been removed. Module responsibilities and shared implementations are documented in `docs/code_structure.md`.
 
 ## Style and Standards
 

@@ -9,15 +9,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from amethyst.adapters.tools.sql_base import ReadOnlySQLTool, _format_result
 from amethyst.domain.contracts import (
     ConnectionHealth,
     ContractError,
     ErrorCode,
     OperationContext,
-    Source,
-    ToolCall,
-    ToolDefinition,
-    ToolResult,
 )
 
 MAX_ROWS = 1_000
@@ -53,79 +50,10 @@ def _reject_write(
     return sqlite3.SQLITE_OK if action in allowed else sqlite3.SQLITE_DENY
 
 
-def _bounded_json(rows: list[dict[str, Any]], limit: int) -> tuple[str, bool]:
-    """Encode rows within a byte limit while preserving valid JSON.
+class SQLiteReadOnlyTool(ReadOnlySQLTool):
+    name = "sql.sqlite.query"
+    database_label = "SQLite"
 
-    Parameters
-    ----------
-    rows : list of dict
-        Query rows to serialize.
-    limit : int
-        Maximum encoded byte count.
-
-    Returns
-    -------
-    tuple
-        JSON array and whether rows were removed to meet the limit.
-    """
-    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"), default=str)
-    raw = encoded.encode("utf-8")
-    if len(raw) <= limit:
-        return encoded, False
-    # Keep valid JSON while trimming records to the byte budget.
-    kept: list[dict[str, Any]] = []
-    for row in rows:
-        candidate = json.dumps(
-            [*kept, row], ensure_ascii=False, separators=(",", ":"), default=str
-        )
-        if len(candidate.encode("utf-8")) > limit:
-            break
-        kept.append(row)
-    return json.dumps(
-        kept, ensure_ascii=False, separators=(",", ":"), default=str
-    ), True
-
-
-def _format_result(
-    rows: list[dict[str, Any]], columns: list[str], limit: int
-) -> tuple[str, bool]:
-    """Serialize SQL metadata and rows within the output-byte limit.
-
-    Parameters
-    ----------
-    rows : list of dict
-        Result rows. The input list is not modified.
-    columns : list of str
-        Result column names.
-    limit : int
-        Maximum encoded output size.
-
-    Returns
-    -------
-    tuple
-        Bounded JSON object and truncation indicator.
-    """
-    truncated = False
-    remaining_rows = list(rows)
-    while remaining_rows:
-        payload = json.dumps(
-            {"columns": columns, "rows": remaining_rows},
-            ensure_ascii=False,
-            separators=(",", ":"),
-            default=str,
-        )
-        if len(payload.encode("utf-8")) <= limit:
-            return payload, truncated
-        remaining_rows.pop()
-        truncated = True
-    payload = json.dumps({"columns": columns, "rows": []}, separators=(",", ":"))
-    if len(payload.encode("utf-8")) > limit:
-        payload = "{}" if limit >= 2 else ""
-        truncated = True
-    return payload, truncated
-
-
-class SQLiteReadOnlyTool:
     def __init__(self, database: str | Path, connection_id: str = "sqlite") -> None:
         """Configure a read-only SQLite database connection.
 
@@ -135,51 +63,31 @@ class SQLiteReadOnlyTool:
             Source database path.
         connection_id : str, optional
             Safe source identifier included with query results.
+
+        Returns
+        -------
+        None
         """
         self.database = Path(database).expanduser().resolve()
         self.connection_id = connection_id
 
-    @property
-    def definition(self) -> ToolDefinition:
-        """Return the SQL query tool definition exposed to the agent."""
-        return ToolDefinition(
-            "sql.sqlite.query",
-            "Run one read-only SQL query against the configured SQLite database.",
-            {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-            read_only=True,
-        )
-
-    async def execute(self, call: ToolCall, context: OperationContext) -> ToolResult:
-        """Execute one read-only query and enforce row, time, and byte bounds.
+    async def _execute_query(
+        self, query: str, context: OperationContext
+    ) -> tuple[list[dict[str, Any]], list[str], bool]:
+        """Run the driver query and translate backend-specific failures safely.
 
         Parameters
         ----------
-        call : ToolCall
-            SQL tool call containing a query string.
+        query : str
+            Validated SQL statement.
         context : OperationContext
-            Deadline and maximum output size.
+            Query timeout and result-size policy.
 
         Returns
         -------
-        ToolResult
-            JSON columns and rows with source attribution.
-
-        Raises
-        ------
-        ContractError
-            For invalid input, denied writes, or query timeout/failure.
+        tuple
+            Rows, column names, and truncation state.
         """
-        if call.name != self.definition.name or not isinstance(
-            call.arguments.get("query"), str
-        ):
-            raise ContractError(ErrorCode.INVALID_INPUT, "A SQL query is required.")
-        query = call.arguments.get("query")
-        if not isinstance(query, str):
-            raise ContractError(ErrorCode.INVALID_INPUT, "A SQL query is required.")
         deadline = time.monotonic() + max(0.01, context.timeout_seconds)
         try:
             rows, columns, truncated = await asyncio.wait_for(
@@ -202,12 +110,7 @@ class SQLiteReadOnlyTool:
             raise ContractError(
                 ErrorCode.INVALID_INPUT, "The SQLite query could not be executed."
             ) from None
-        content, byte_truncated = _format_result(
-            rows, columns, max(0, context.output_limit_bytes)
-        )
-        return ToolResult(
-            call.id, content, (Source(self.connection_id),), truncated or byte_truncated
-        )
+        return rows, columns, truncated
 
     def _query(
         self, query: str, deadline: float
@@ -285,7 +188,16 @@ class SQLiteReadOnlyTool:
         return ConnectionHealth(True, "SQLite connection is available.")
 
     def _health(self) -> None:
-        """Run a constant read-only health query against SQLite."""
+        """Run a constant read-only health query against SQLite.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         connection = sqlite3.connect(
             self.database.as_uri() + "?mode=ro", uri=True, timeout=2
         )
@@ -295,8 +207,11 @@ class SQLiteReadOnlyTool:
             connection.close()
 
 
-class PostgreSQLReadOnlyTool:
+class PostgreSQLReadOnlyTool(ReadOnlySQLTool):
     """PostgreSQL adapter using optional psycopg 3 and a read-only transaction."""
+
+    name = "sql.postgresql.query"
+    database_label = "PostgreSQL"
 
     def __init__(self, dsn: str, connection_id: str = "postgresql") -> None:
         """Configure PostgreSQL using a credential-bearing in-memory DSN.
@@ -307,51 +222,31 @@ class PostgreSQLReadOnlyTool:
             DSN assembled from validated settings and credential-store data.
         connection_id : str, optional
             Safe source identifier included with query results.
+
+        Returns
+        -------
+        None
         """
         self._dsn = dsn
         self.connection_id = connection_id
 
-    @property
-    def definition(self) -> ToolDefinition:
-        """Return the read-only PostgreSQL tool definition."""
-        return ToolDefinition(
-            "sql.postgresql.query",
-            "Run one read-only SQL query against the configured PostgreSQL database.",
-            {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-            read_only=True,
-        )
-
-    async def execute(self, call: ToolCall, context: OperationContext) -> ToolResult:
-        """Execute a bounded read-only PostgreSQL query.
+    async def _execute_query(
+        self, query: str, context: OperationContext
+    ) -> tuple[list[dict[str, Any]], list[str], bool]:
+        """Run the driver query and translate backend-specific failures safely.
 
         Parameters
         ----------
-        call : ToolCall
-            SQL tool call with one query string.
+        query : str
+            Validated SQL statement.
         context : OperationContext
-            Deadline and output-byte limit.
+            Query timeout and result-size policy.
 
         Returns
         -------
-        ToolResult
-            Bounded result data and database source attribution.
-
-        Raises
-        ------
-        ContractError
-            For invalid SQL, missing optional driver, or a provider failure.
+        tuple
+            Rows, column names, and truncation state.
         """
-        query = call.arguments.get("query")
-        if (
-            call.name != self.definition.name
-            or not isinstance(query, str)
-            or not query.strip()
-        ):
-            raise ContractError(ErrorCode.INVALID_INPUT, "A SQL query is required.")
         try:
             rows, columns, truncated = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -374,15 +269,7 @@ class PostgreSQLReadOnlyTool:
             if exc.__class__.__module__.startswith("psycopg"):
                 raise _postgres_error(exc) from None
             raise
-        content, byte_truncated = _format_result(
-            rows, columns, max(0, context.output_limit_bytes)
-        )
-        return ToolResult(
-            call.id,
-            content,
-            (Source(self.connection_id),),
-            truncated or byte_truncated,
-        )
+        return rows, columns, truncated
 
     def _query(
         self, query: str, output_limit: int, timeout_seconds: float
@@ -429,21 +316,10 @@ class PostgreSQLReadOnlyTool:
                 ]
         truncated = len(rows) > MAX_ROWS
         rows = rows[:MAX_ROWS]
-        _, byte_truncated = _bounded_json(rows, max(0, output_limit))
+        content, byte_truncated = _format_result(rows, columns, max(0, output_limit))
         if byte_truncated:
-            while (
-                rows
-                and len(
-                    json.dumps(
-                        {"columns": columns, "rows": rows},
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                        default=str,
-                    ).encode("utf-8")
-                )
-                > output_limit
-            ):
-                rows.pop()
+            bounded = json.loads(content) if content else {}
+            rows = bounded.get("rows", [])
         return rows, columns, truncated or byte_truncated
 
     async def test_connection(self, context: OperationContext) -> ConnectionHealth:
@@ -481,7 +357,16 @@ class PostgreSQLReadOnlyTool:
         return ConnectionHealth(True, "PostgreSQL connection is available.")
 
     def _health(self) -> None:
-        """Run a constant query in a read-only PostgreSQL connection."""
+        """Run a constant query in a read-only PostgreSQL connection.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         import psycopg  # type: ignore[import-not-found]
 
         with psycopg.connect(

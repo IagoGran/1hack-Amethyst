@@ -12,7 +12,20 @@ from amethyst.domain.contracts import (
 
 
 class ModelProvider(Protocol):
-    async def capabilities(self, model_id: str) -> ModelCapabilities: ...
+    async def capabilities(self, model_id: str) -> ModelCapabilities:
+        """Report the configured model capabilities and context capacity.
+
+        Parameters
+        ----------
+        model_id : str
+            Configured model identifier.
+
+        Returns
+        -------
+        ModelCapabilities
+            Supported generation features and context capacity.
+        """
+        ...
 
     def stream(
         self, request: ModelRequest, context: OperationContext
@@ -21,5 +34,17 @@ class ModelProvider(Protocol):
 
         Raise ContractError for safe failures; propagate asyncio cancellation.
         Include consumed usage in ContractError when available. Never retry here.
+
+        Parameters
+        ----------
+        request : ModelRequest
+            Typed request describing the operation and its scope.
+        context : OperationContext
+            Task/session scope, remaining timeout, and output limits.
+
+        Returns
+        -------
+        AsyncIterator[ModelEvent]
+            Value produced by the operation.
         """
         ...
