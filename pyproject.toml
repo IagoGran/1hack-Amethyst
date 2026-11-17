@@ -7,11 +7,69 @@ authors = [
     { name = "IagoGran", email = "iago@iago-grandal.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "keyring>=25.7.0",
+    "pydantic-ai-slim[google,openai]>=2,<3",
+    "pyside6>=6.8,<7",
+]
+
+[project.optional-dependencies]
+postgresql = ["psycopg[binary]>=3.2,<4"]
+qdrant = ["qdrant-client>=1.12,<2"]
+chroma = ["chromadb>=0.5,<2"]
+milvus = ["pymilvus>=2.5,<3"]
+integrations = [
+    "psycopg[binary]>=3.2,<4",
+    "qdrant-client>=1.12,<2",
+    "chromadb>=0.5,<2",
+    "pymilvus>=2.5,<3",
+]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "pytest-cov>=7.1.0",
+    "ruff",
+]
 
 [project.scripts]
-1hack-amethyst = "1hack_amethyst:main"
+1hack-amethyst = "amethyst:main"
 
 [build-system]
 requires = ["uv_build>=0.12.6,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "amethyst"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "src"
+files = ["src"]
+check_untyped_defs = true
+disallow_untyped_defs = false
+no_implicit_optional = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+markers = ["live_sandbox: opt-in Docker boundary tests on a supported host"]
+
+[tool.coverage.run]
+branch = true
+source = ["amethyst.domain", "amethyst.application", "amethyst.security"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

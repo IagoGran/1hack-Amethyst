@@ -3,3 +3,18 @@
 
 # Ignore environment variable files
 .env
+
+# Ignore Python and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.json
+htmlcov/
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/

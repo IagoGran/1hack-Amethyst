@@ -1,0 +1,71 @@
+# Conventions
+
+## Principles
+
+- Keep clear module boundaries for providers, connectors, skills, permissions, and agent execution.
+- Apply least privilege and explicit approval for protected actions.
+- Keep task, tool, and approval status visible.
+- Treat `docs/project_requirements.md` as the normative requirements source.
+- Write all project-authored code, identifiers, comments, documentation, and user-facing text in English.
+
+## Repository Structure
+
+The Python application lives in `src/amethyst/`: `application/` for use cases and runtime composition, `domain/` for core types, `ports/` for contracts, `adapters/` for integrations, `security/` for permissions, `skills/` for reusable skills, `configuration/` for settings, and `ui/` for the PySide6 desktop. The distribution/CLI stays `1hack-amethyst`; normal Python imports use `amethyst`. Shared DTOs are in `domain/contracts.py`, async protocols are in `ports/`, and test-only doubles and vendor fixtures are in `tests/support/`, outside the application package. The launcher uses real services; preview launchers and their exclusive UI/data modules have been removed. All application asyncio state stays on the persistent desktop worker loop. The empty `src/llm/agent.py` and obsolete `src/main.py` entry point have been removed. Module responsibilities and shared implementations are documented in `docs/code_structure.md`.
+
+## Style and Standards
+
+### Naming
+
+- Use English for identifiers and user-facing text.
+- Use `snake_case` for modules, functions, and variables; `PascalCase` for classes; and `UPPER_SNAKE_CASE` for constants.
+- Use short, descriptive kebab-case branch descriptions.
+
+### Function and Class Design
+
+- Keep functions and methods under 100 lines by default; extract cohesive helpers as needed.
+- Give every function and method an English docstring that explains its purpose and behavior.
+- Add concise comments for non-obvious logic, especially async/thread event bridges and security boundaries; explain behavior without repeating the code.
+- Use small superclasses for shared behavior or stable roles. Prefer composition when inheritance would add no clarity.
+
+### Code Formatting
+
+- Use four spaces for Python indentation and UTF-8 text files with LF line endings.
+- Format Python with Ruff using an 88-character line length.
+- Keep Markdown readable; do not enforce line wrapping automatically.
+- Keep every Python function and method at 100 lines or fewer, counting its definition, docstring, and body. Split longer functions into helpers with clear responsibilities.
+- Give every Python function and method a Numpydoc-style docstring. Explain its purpose; document every parameter and return value; add a `Notes` section for important behavior, limitations, side effects, or safety considerations. Use `Parameters` and `Returns` sections for internal helpers too; use `None` for functions without a return value.
+- Apply the same limits and docstring requirements to test functions and helpers.
+
+### Linting and Formatting
+
+- Run `uv run ruff check .` for linting.
+- Run `uv run ruff format --check .` to check formatting; use `uv run ruff format .` to format.
+- Ruff rules: `E`, `F`, `I`, `UP`, and `B`.
+
+## Dependency Management
+
+Declare runtime dependencies in `[project].dependencies` and development tools in the `dev` dependency group in `pyproject.toml`. Use `uv` to synchronize and run project tools. Commit `uv.lock` so installations use the resolved dependency versions. Do not add dependencies without a project need.
+
+## Common Errors to Avoid
+
+- Do not couple agent logic directly to a specific provider or connector.
+- Do not allow write queries through read-only SQL interfaces.
+- Do not execute tools or modify files before required approval.
+- Do not expose secrets in messages, logs, or errors.
+- Do not add non-English project-authored content unless requested.
+
+## Minimum Security
+
+Apply requirements FR-26 through FR-30 and NFR-04 through NFR-07 in `docs/project_requirements.md`: scoped and revocable permissions, credential protection, data minimization, and blocking actions without required approval.
+
+## Documentation
+
+Write new and maintained project documentation in English. Document stable interfaces and decisions in context. Keep approved requirements distinct from recommendations. Preserve existing source documents unless explicitly asked to translate or rewrite them.
+
+## Decisions That Must Not Be Broken
+
+- Existing file modifications require explicit approval of the displayed diff, individually or in an explicitly listed batch; changed proposals require renewed approval (FR-27).
+- Tool execution must be blocked when required approval is missing or revoked (FR-30).
+- Providers, connectors, and skills must retain modular boundaries (NFR-11).
+- Product commands/tests run in a container sandbox restricted to the approved workspace, with network disabled by default (FR-16, FR-17, NFR-06).
+- Apply the approved limits, approval lifetimes, and retention rules in requirements section 5; do not treat documentation of these decisions as completed implementation.
